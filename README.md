@@ -1,5 +1,7 @@
 # Watchnote
 
+A hosted instance is available at [watchnote.u9g.dev](https://watchnote.u9g.dev).
+
 Watch GitHub issues and pull requests, and get an email whenever something
 happens to them. Each email starts with the note you saved about **why** you're
 watching it.
