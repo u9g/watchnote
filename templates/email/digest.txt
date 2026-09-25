@@ -1,7 +1,7 @@
 Your Watchnote digest
 {{range .Entries}}
 ==========================================
-WHY YOU SAVED THIS: {{.Watch.Note}}
+WHY YOU SAVED THIS: {{.Watch.Why}}
 ({{.Saved}})
 
 {{.Item.Title}}

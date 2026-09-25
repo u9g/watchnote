@@ -6,7 +6,7 @@
     <div class="card">
       <div class="meta">{{template "badge" .Item}} {{.Item.Owner}}/{{.Item.Repo}} #{{.Item.Number}}</div>
       <div class="title">{{.Item.Title}}</div>
-      <div class="note">{{markdown .Note}}</div>
+      <div class="note">{{markdown .Why}}</div>
     </div>
     {{end}}
     {{if .ActionDone}}

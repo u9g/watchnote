@@ -17,6 +17,8 @@ watching it.
 - Every email has one-click links to mute, switch to status-only, or stop watching,
   plus a standard `List-Unsubscribe` header.
 - A userscript adds a **Watch with note** button to GitHub issue and PR pages.
+- A code comment like `// owner/repo#123: why` keeps that item watched until the
+  comment is deleted, synced by your repo's CI.
 - Private repos work if you save a read-only fine-grained GitHub token in Settings.
 
 It's a single Go binary with server-rendered HTML and SQLite. It works on phones
@@ -128,6 +130,43 @@ note** button appears in the bottom-right corner. It asks for the token once, sa
 the watch through the JSON API, and then shows **✓ Watching** with a link to the item.
 Notes are edited in the web app.
 
+## Watching from code comments
+
+When code exists because of an issue or PR, say so above it, on a line of its own:
+
+```go
+    // octo/hello#7: Retry until shutdown stops racing; delete once this is fixed.
+```
+
+Any `//`, `#`, `--`, `;` or `/* */` comment works. A CI step sends the repo's matching
+lines to `PUT /api/sync`, which watches every referenced item and shows the comment,
+linked to its line, as the note. When a comment disappears, so does its reference,
+and a watch left with no references and no note of its own is stopped. Put this in
+`.github/workflows/watchnote.yml`, with a token from Settings in the `WATCHNOTE_TOKEN`
+secret:
+
+```yaml
+name: Watchnote
+on:
+  push:
+    branches: [main]
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          { git grep -InE '[[:alnum:]_.-]+/[[:alnum:]_.-]+#[0-9]+:' || true; } |
+            curl -sS --fail-with-body -X PUT --data-binary @- \
+              -H "Authorization: Bearer $WATCHNOTE_TOKEN" \
+              "https://watchnote.example.com/api/sync?repo=$GITHUB_REPOSITORY&sha=$GITHUB_SHA"
+        env:
+          WATCHNOTE_TOKEN: ${{ secrets.WATCHNOTE_TOKEN }}
+```
+
+The step fails (HTTP 422) when a reference can't be watched, such as a typo. Every
+other reference still syncs.
+
 ## MCP
 
 `/mcp` is an [MCP](https://modelcontextprotocol.io) server (Streamable HTTP), so an
@@ -146,6 +185,6 @@ claude mcp add --transport http watchnote https://watchnote.example.com/mcp \
 | `watch` | Start watching an issue or PR, with a note (everything or status-only) |
 | `update_note` | Replace a watch's note |
 | `set_status` | Mark a watch active, muted or done |
-| `stop_watching` | Stop watching and delete the note |
+| `stop_watching` | Stop watching and delete the note (refused while code comments reference it) |
 
 A token can only see and change its own user's watches.

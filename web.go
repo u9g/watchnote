@@ -104,6 +104,7 @@ func (a *App) routes() http.Handler {
 
 	mux.HandleFunc("GET /api/watch", a.withAPIUser(a.apiLookup))
 	mux.HandleFunc("POST /api/watch", a.withAPIUser(a.apiCreate))
+	mux.HandleFunc("PUT /api/sync", a.withAPIUser(a.apiSync))
 	mux.HandleFunc("GET /watchnote.user.js", a.handleUserscript)
 	mux.Handle("/mcp", a.mcpHandler())
 

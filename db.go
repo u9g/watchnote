@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -86,9 +87,21 @@ CREATE TABLE IF NOT EXISTS watches (
 	UNIQUE (user_id, item_id)
 );
 
+-- A comment in some repo's code that references a watched item. Each sync
+-- replaces one repo's rows; a watch with no note and no refs is deleted.
+CREATE TABLE IF NOT EXISTS code_refs (
+	watch_id INTEGER NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
+	repo     TEXT NOT NULL,                -- owner/name the comment is in, lowercase
+	sha      TEXT NOT NULL,
+	path     TEXT NOT NULL,
+	line     INTEGER NOT NULL,
+	note     TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS events_item ON events(item_id, id);
 CREATE INDEX IF NOT EXISTS items_poll ON items(next_poll_at);
 CREATE INDEX IF NOT EXISTS watches_item ON watches(item_id);
+CREATE INDEX IF NOT EXISTS code_refs_watch ON code_refs(watch_id);
 `
 
 // addedColumns brings databases created before a column existed up to schema.
@@ -433,8 +446,22 @@ type Watch struct {
 	ViewedEventID   int64
 	CreatedAt       int64
 
-	Item     *Item // joined
-	NewCount int   // events after ViewedEventID
+	Item     *Item     // joined
+	NewCount int       // events after ViewedEventID
+	Refs     []CodeRef // code comments that reference the item
+}
+
+// Why is what the user reads about why they watch the item: the note, then
+// each code comment that references it.
+func (w *Watch) Why() string {
+	var parts []string
+	if w.Note != "" {
+		parts = append(parts, w.Note)
+	}
+	for _, c := range w.Refs {
+		parts = append(parts, fmt.Sprintf("%s ([%s/%s:%d](%s))", c.Note, c.Repo, c.Path, c.Line, c.URL()))
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 const watchCols = `w.id, w.user_id, w.item_id, w.note, w.filter, w.delivery, w.status, w.notified_event_id,
@@ -476,7 +503,33 @@ func (db *DB) queryWatches(ctx context.Context, where string, args ...any) ([]*W
 		}
 		out = append(out, w)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil || len(out) == 0 {
+		return out, err
+	}
+	return out, db.loadCodeRefs(ctx, out)
+}
+
+func (db *DB) loadCodeRefs(ctx context.Context, ws []*Watch) error {
+	byID := map[int64]*Watch{}
+	ids := make([]int64, len(ws))
+	for i, w := range ws {
+		byID[w.ID], ids[i] = w, w.ID
+	}
+	idsJSON, _ := json.Marshal(ids)
+	rows, err := db.QueryContext(ctx, `SELECT watch_id, repo, sha, path, line, note FROM code_refs
+		WHERE watch_id IN (SELECT value FROM json_each(?)) ORDER BY repo, path, line`, string(idsJSON))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var c CodeRef
+		if err := rows.Scan(&c.WatchID, &c.Repo, &c.SHA, &c.Path, &c.Line, &c.Note); err != nil {
+			return err
+		}
+		byID[c.WatchID].Refs = append(byID[c.WatchID].Refs, c)
+	}
+	return rows.Err()
 }
 
 func (db *DB) WatchByID(ctx context.Context, id int64) (*Watch, error) {
@@ -520,8 +573,9 @@ func (db *DB) ListWatches(ctx context.Context, uid int64, status, q string) ([]*
 	if q = strings.TrimSpace(q); q != "" {
 		like := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(q)) + "%"
 		where += ` AND (lower(i.title) LIKE ? ESCAPE '\' OR lower(w.note) LIKE ? ESCAPE '\'
-			OR (i.owner || '/' || i.repo) LIKE ? ESCAPE '\')`
-		args = append(args, like, like, like)
+			OR (i.owner || '/' || i.repo) LIKE ? ESCAPE '\'
+			OR EXISTS (SELECT 1 FROM code_refs c WHERE c.watch_id = w.id AND lower(c.note) LIKE ? ESCAPE '\'))`
+		args = append(args, like, like, like, like)
 	}
 	return db.queryWatches(ctx, where+` ORDER BY MAX(i.last_activity, w.created_at) DESC`, args...)
 }
@@ -596,4 +650,35 @@ func (db *DB) DeleteWatch(ctx context.Context, id int64) error {
 		return err
 	}
 	return db.DeleteOrphanItems(ctx)
+}
+
+// ReplaceCodeRefs makes refs the complete set of code comments in repo for
+// the user's watches, except that watches in keep hold on to their current
+// refs from repo. Watches left with no note and no refs are deleted.
+func (db *DB) ReplaceCodeRefs(ctx context.Context, uid int64, repo string, refs []CodeRef, keep []int64) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	keepJSON, _ := json.Marshal(append([]int64{}, keep...))
+	if _, err := tx.ExecContext(ctx, `DELETE FROM code_refs WHERE repo = ?
+		AND watch_id IN (SELECT id FROM watches WHERE user_id = ?)
+		AND watch_id NOT IN (SELECT value FROM json_each(?))`, repo, uid, string(keepJSON)); err != nil {
+		return err
+	}
+	for _, c := range refs {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO code_refs (watch_id, repo, sha, path, line, note)
+			VALUES (?, ?, ?, ?, ?, ?)`, c.WatchID, repo, c.SHA, c.Path, c.Line, c.Note); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM watches WHERE user_id = ? AND note = ''
+		AND NOT EXISTS (SELECT 1 FROM code_refs c WHERE c.watch_id = watches.id)`, uid); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM items WHERE NOT EXISTS (SELECT 1 FROM watches w WHERE w.item_id = items.id)`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
