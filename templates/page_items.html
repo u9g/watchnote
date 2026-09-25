@@ -65,6 +65,10 @@
         <div class="muted start">You started watching · {{ago .CreatedAt}}</div>
       </div>
 
+      <div class="field-label">Done badge</div>
+      <input class="input mono" readonly value="{{$.Badge}}" data-select>
+      <div class="muted small">Paste into a PR description to see whether this is done, and click it to change that.</div>
+
       <details class="prefs">
         <summary>Notification settings</summary>
         <form method="post" action="/items/{{.ID}}/prefs">

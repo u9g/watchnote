@@ -28,6 +28,7 @@ type pageData struct {
 	Selected *Watch
 	Events   []*Event
 	NewSince int64
+	Badge    string // Markdown for a PR description
 
 	// new watch
 	URL      string
@@ -99,6 +100,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /settings/github/remove", a.withUser(a.handleGitHubRemove))
 	mux.HandleFunc("POST /settings/api-token", a.withUser(a.handleAPIToken))
 
+	mux.HandleFunc("GET /badge/{id}", a.handleBadge)
 	mux.HandleFunc("GET /e/{action}", a.handleEmailAction)
 	mux.HandleFunc("POST /e/{action}", a.handleEmailAction)
 
@@ -390,6 +392,7 @@ func (a *App) handleDetail(w http.ResponseWriter, r *http.Request, u *User) {
 	d.Title = wt.Item.Ref() + " · Watchnote"
 	d.Selected = wt
 	d.NewSince = wt.ViewedEventID
+	d.Badge = fmt.Sprintf("[![Watchnote](%s)](%s/items/%d)", a.badgeURL(wt), a.cfg.BaseURL, wt.ID)
 	if d.Events, err = a.db.RecentEvents(r.Context(), wt.ItemID, 100); err != nil {
 		a.serverError(w, err)
 		return

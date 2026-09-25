@@ -14,6 +14,9 @@ watching it.
   contains it, for fixes you're waiting to pick up from a release.
 - Merged/closed/released emails ask whether you're done. Done items stay quiet unless they're
   reopened. Nothing is archived automatically.
+- Each watch has a **done badge**: paste its Markdown from the item page into a PR
+  description to see whether you're done without opening Watchnote. It's re-fetched on every
+  view, and clicking it opens the item (for you only) to change that.
 - Every email has one-click links to mute, switch to status-only, or stop watching,
   plus a standard `List-Unsubscribe` header.
 - A userscript adds a **Watch with note** button to GitHub issue and PR pages.

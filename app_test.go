@@ -463,6 +463,39 @@ func TestWebFlow(t *testing.T) {
 	}
 }
 
+func TestDoneBadge(t *testing.T) {
+	h := newHarness(t)
+	w := h.addWatch(filterEverything)
+	_, body := h.do("GET", fmt.Sprintf("/items/%d", w.ID), nil)
+	badge := fmt.Sprintf("/badge/%d?s=%s", w.ID, h.app.keys.LinkSig("badge", w.ID))
+	if !strings.Contains(body, badge) {
+		t.Fatalf("detail page doesn't offer the badge %s", badge)
+	}
+	get := func(path string) (*http.Response, string) {
+		resp, err := http.Get(h.srv.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return resp, string(b)
+	}
+	resp, svg := get(badge)
+	if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != "image/svg+xml" || !strings.Contains(svg, ">not done<") {
+		t.Fatalf("active badge: %d %s\n%s", resp.StatusCode, resp.Header.Get("Content-Type"), svg)
+	}
+	if !strings.Contains(resp.Header.Get("Cache-Control"), "no-cache") {
+		t.Error("badge can be cached")
+	}
+	h.do("POST", fmt.Sprintf("/items/%d/status", w.ID), url.Values{"status": {"done"}})
+	if _, svg = get(badge); !strings.Contains(svg, ">done<") {
+		t.Fatalf("done badge:\n%s", svg)
+	}
+	if resp, _ = get(fmt.Sprintf("/badge/%d?s=bad", w.ID)); resp.StatusCode != 403 {
+		t.Errorf("bad signature: %d", resp.StatusCode)
+	}
+}
+
 func TestEmailActionLinks(t *testing.T) {
 	h := newHarness(t)
 	w := h.addWatch(filterEverything)
