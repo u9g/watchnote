@@ -69,7 +69,9 @@ a.card:hover { border-color: #cfd8ea; }
 .note ul, .note ol { padding-left: 20px; }
 .note pre { overflow-x: auto; }
 .note blockquote { padding-left: 8px; border-left: 3px solid var(--note-line); }
-.card .note.plain { font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
+.card .note.plain { font-size: 13px; white-space: normal; }
+.card .note.plain .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .note.plain .clamp > * { margin: 0; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; }
 .account { flex-direction: row; align-items: center; gap: 12px; }
 

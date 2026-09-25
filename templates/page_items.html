@@ -24,7 +24,7 @@
       <a class="card watch{{if and $.Selected (eq $.Selected.ID .ID)}} sel{{end}}" href="/items/{{.ID}}">
         <div class="meta">{{if .NewCount}}<span class="dot"></span>{{end}}{{template "badge" .Item}} {{.Item.Owner}}/{{.Item.Repo}} #{{.Item.Number}}{{if .NewCount}} · {{.NewCount}} new{{end}}</div>
         <div class="title">{{.Item.Title}}</div>
-        <div class="note plain">{{.Note}}</div>
+        <div class="note plain"><div class="clamp">{{markdownPreview .Note}}</div></div>
       </a>
       {{else}}
         {{if .Q}}

@@ -367,7 +367,7 @@ func TestWebFlow(t *testing.T) {
 		t.Fatalf("note not rendered as safe markdown:\n%s", body)
 	}
 	_, body = h.do("GET", "/items?q=v3", nil)
-	if !strings.Contains(body, "Blocks **v3** now") {
+	if !strings.Contains(body, "Blocks <strong>v3</strong> now") {
 		t.Fatal("search by note failed")
 	}
 	// Missing CSRF is rejected.
