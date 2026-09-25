@@ -143,7 +143,9 @@ Notes are edited in the web app.
 
 When code exists because of an issue or PR, say so in a comment on its own line above
 it, like `// octo/hello#7: Retry until shutdown stops racing; delete once this is fixed.`
-Any `//`, `#`, `--`, `;` or `/* */` comment works. With a GitHub token saved in
+Any comment works (`//`, `//!`, `#`, `--`, `;`, `%`, `/* */`, `<!-- -->` and so on), as
+does a line of its own inside a docstring: what counts is a line that starts with
+`owner/repo#N: ` once any leading punctuation is set aside. With a GitHub token saved in
 Settings, Watchnote reads the default branch of every repo the token can push to
 (forks aside), again after each push, and watches every item referenced this way. The
 comment, linked to its line, is shown as the note. When a comment is deleted, its

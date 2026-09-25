@@ -102,6 +102,12 @@ func TestParseCodeRef(t *testing.T) {
 		"-  // o/r#9: removed by a patch",
 		"// o/r#8:",
 		"// o/r#0: zero",
+		"//! o/r#10: rust inner doc",
+		"o/r#11: inside a docstring",
+		"<!-- o/r#12: html -->",
+		"% o/r#13: tex",
+		"see (o/r#14: mid-sentence",
+		"o/r#15:3 no note",
 	}
 	var got []string
 	for _, l := range lines {
@@ -109,7 +115,8 @@ func TestParseCodeRef(t *testing.T) {
 			got = append(got, target.String()+" "+note)
 		}
 	}
-	want := []string{"o/r#1 slashes", "o/r#2 dashes", "o/r#3 block", "o/r#4 continued block", "o/r#5 lisp", "o/r#7 added by a patch"}
+	want := []string{"o/r#1 slashes", "o/r#2 dashes", "o/r#3 block", "o/r#4 continued block", "o/r#5 lisp", "o/r#7 added by a patch",
+		"o/r#10 rust inner doc", "o/r#11 inside a docstring", "o/r#12 html", "o/r#13 tex"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %q", got)
 	}
