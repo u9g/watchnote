@@ -60,6 +60,19 @@
       {{end}}
     </div>
 
+    <div class="field-label">Personal token</div>
+    <div class="card stack">
+      <div>Lets the GitHub button and AI assistants (over MCP) use your Watchnote.</div>
+      {{if .APIToken}}
+        <div class="ok">Copy this token now. It won't be shown again.</div>
+        <input class="input mono" readonly value="{{.APIToken}}" data-select>
+      {{end}}
+      <form method="post" action="/settings/api-token"{{if .User.HasAPIToken}} data-confirm="This replaces your current token. The GitHub button and MCP clients will need the new one."{{end}}>
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <button class="btn">{{if .User.HasAPIToken}}Replace token{{else}}Generate token{{end}}</button>
+      </form>
+    </div>
+
     <div class="field-label">GitHub button</div>
     <div class="card stack">
       <div>Adds a <b>Watch with note</b> button to GitHub issue and PR pages. Needs
@@ -67,16 +80,16 @@
         Violentmonkey or Greasemonkey.</div>
       <ol class="small">
         <li><a href="/watchnote.user.js">Install the userscript</a>.</li>
-        <li>Generate a token below. The first time you click the button on GitHub, paste it in.</li>
+        <li>The first time you click the button on GitHub, paste your token in.</li>
       </ol>
-      {{if .APIToken}}
-        <div class="ok">Copy this token now. It won't be shown again.</div>
-        <input class="input mono" readonly value="{{.APIToken}}" data-select>
-      {{end}}
-      <form method="post" action="/settings/api-token"{{if .User.HasAPIToken}} data-confirm="This replaces your current token. The userscript will ask for the new one."{{end}}>
-        <input type="hidden" name="csrf" value="{{.CSRF}}">
-        <button class="btn">{{if .User.HasAPIToken}}Replace token{{else}}Generate token{{end}}</button>
-      </form>
+    </div>
+
+    <div class="field-label">MCP</div>
+    <div class="card stack">
+      <div>Let an AI assistant list your watches, read their notes and activity, and add or change them.
+        The server is at <code class="mono">{{.BaseURL}}/mcp</code> and takes your token as a bearer token. In Claude Code:</div>
+      <input class="input mono" readonly data-select
+        value="claude mcp add --transport http watchnote {{.BaseURL}}/mcp --header &quot;Authorization: Bearer {{if .APIToken}}{{.APIToken}}{{else}}&lt;your token&gt;{{end}}&quot;">
     </div>
 
     <form method="post" action="/logout">

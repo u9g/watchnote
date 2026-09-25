@@ -18,6 +18,9 @@ import (
 	_ "time/tzdata" // users pick IANA timezones; don't depend on the image having them
 )
 
+// version is set at build time (-ldflags "-X main.version=...").
+var version = "dev"
+
 type Config struct {
 	BaseURL            string
 	ListenAddr         string
@@ -165,7 +168,7 @@ func run() error {
 		defer cancel()
 		srv.Shutdown(shutdownCtx)
 	}()
-	slog.Info("listening", "addr", cfg.ListenAddr, "base_url", cfg.BaseURL)
+	slog.Info("listening", "version", version, "addr", cfg.ListenAddr, "base_url", cfg.BaseURL)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
