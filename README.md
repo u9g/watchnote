@@ -164,4 +164,6 @@ claude mcp add --transport http watchnote https://watchnote.example.com/mcp \
 | `set_status` | Mark a watch active, muted or done |
 | `stop_watching` | Stop watching and delete the note (refused while code comments reference it) |
 
+Every watch the tools return includes `done_badge`, the Markdown for its done badge.
+
 A token can only see and change its own user's watches.

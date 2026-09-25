@@ -84,6 +84,9 @@ func TestMCP(t *testing.T) {
 	if !w.Created || w.Watch.Filter != filterStatusOnly || w.Watch.Ref != "octo/hello#7" || w.Watch.Title != "Flaky shutdown" {
 		t.Errorf("watch = %+v", w)
 	}
+	if !strings.Contains(w.Watch.DoneBadge, "/badge/") {
+		t.Errorf("done_badge = %q", w.Watch.DoneBadge)
+	}
 
 	var list listWatchesOut
 	call(t, s, "list_watches", map[string]any{"query": "v2"}, &list)

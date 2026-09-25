@@ -392,7 +392,7 @@ func (a *App) handleDetail(w http.ResponseWriter, r *http.Request, u *User) {
 	d.Title = wt.Item.Ref() + " · Watchnote"
 	d.Selected = wt
 	d.NewSince = wt.ViewedEventID
-	d.Badge = fmt.Sprintf("[![Watchnote](%s)](%s/items/%d)", a.badgeURL(wt), a.cfg.BaseURL, wt.ID)
+	d.Badge = a.badgeMarkdown(wt)
 	if d.Events, err = a.db.RecentEvents(r.Context(), wt.ItemID, 100); err != nil {
 		a.serverError(w, err)
 		return

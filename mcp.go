@@ -45,6 +45,7 @@ type mcpWatch struct {
 	NewEvents int    `json:"new_events" jsonschema:"updates since the user last opened it in Watchnote"`
 	GitHubURL string `json:"github_url"`
 	AppURL    string `json:"app_url"`
+	DoneBadge string `json:"done_badge" jsonschema:"Markdown for a badge that shows whether the watch is done; paste it into a PR description"`
 	SavedAt   string `json:"saved_at"`
 }
 
@@ -60,7 +61,7 @@ func (a *App) toMCPWatch(w *Watch) mcpWatch {
 	return mcpWatch{
 		ID: w.ID, Ref: w.Item.Ref(), Kind: w.Item.Kind, Title: w.Item.Title, State: w.Item.State,
 		Note: w.Why(), Status: w.Status, Filter: w.Filter, Delivery: w.Delivery, NewEvents: w.NewCount,
-		GitHubURL: w.Item.HTMLURL, AppURL: fmt.Sprintf("%s/items/%d", a.cfg.BaseURL, w.ID),
+		GitHubURL: w.Item.HTMLURL, AppURL: fmt.Sprintf("%s/items/%d", a.cfg.BaseURL, w.ID), DoneBadge: a.badgeMarkdown(w),
 		SavedAt: time.Unix(w.CreatedAt, 0).UTC().Format(time.RFC3339),
 	}
 }
@@ -114,7 +115,8 @@ func (a *App) mcpServer(u *User) *mcp.Server {
 			"Markdown note saying why the user cares; read it before acting on a watch, and write one that will make sense " +
 			"to them months later when adding a watch. If the reason is code in a git repo, don't call watch: add a comment " +
 			"on its own line above that code, like `// owner/repo#123: why this code depends on it`. Watchnote scans " +
-			"the repos the user's saved GitHub token can push to, and deleting the comment stops the watch.",
+			"the repos the user's saved GitHub token can push to, and deleting the comment stops the watch. Every watch has a " +
+			"done_badge: Markdown for a badge showing whether the user is done with it, for a PR description.",
 	})
 	own := func(ctx context.Context, id int64) (*Watch, error) {
 		w, err := a.db.UserWatch(ctx, u.ID, id)

@@ -16,8 +16,10 @@ var badgeSVG = template.Must(template.New("badge").Parse(`<svg xmlns="http://www
 <text x="{{.LX}}" y="14">watchnote</text><text x="{{.RX}}" y="14">{{.Label}}</text></g>
 </svg>`))
 
-func (a *App) badgeURL(w *Watch) string {
-	return fmt.Sprintf("%s/badge/%d?s=%s", a.cfg.BaseURL, w.ID, a.keys.LinkSig("badge", w.ID))
+// badgeMarkdown shows the badge, linked to the watch's page in Watchnote.
+func (a *App) badgeMarkdown(w *Watch) string {
+	return fmt.Sprintf("[![Watchnote](%s/badge/%d?s=%s)](%s/items/%d)",
+		a.cfg.BaseURL, w.ID, a.keys.LinkSig("badge", w.ID), a.cfg.BaseURL, w.ID)
 }
 
 // handleBadge serves a watch's done state as an image for PR descriptions. The
