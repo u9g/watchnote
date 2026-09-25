@@ -20,6 +20,12 @@ mail:
   # -- 587 uses STARTTLS; 465 uses implicit TLS.
   smtpPort: 587
   smtpUsername: ""
+  # -- Read the mail settings from this Secret instead of the values above:
+  # keys MAIL_FROM and SMTP_HOST, and optionally SMTP_PORT (default 587),
+  # SMTP_USERNAME and SMTP_PASSWORD. SMTP_PASSWORD then comes from here too,
+  # not from the main Secret. Pods read it at start, so restart the
+  # Deployment after changing it.
+  existingSecret: ""
 
 # -- Secret values. Ignored when existingSecret is set.
 secrets:

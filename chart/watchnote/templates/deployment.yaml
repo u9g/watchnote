@@ -50,9 +50,21 @@ spec:
               value: /data/watchnote.db
             - name: MAIL_MODE
               value: {{ .Values.mail.mode | quote }}
+            {{- with .Values.mail.existingSecret }}
+            {{- range $k := list "MAIL_FROM" "SMTP_HOST" "SMTP_PORT" "SMTP_USERNAME" "SMTP_PASSWORD" }}
+            - name: {{ $k }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.mail.existingSecret }}
+                  key: {{ $k }}
+                  {{- if not (has $k (list "MAIL_FROM" "SMTP_HOST")) }}
+                  optional: true
+                  {{- end }}
+            {{- end }}
+            {{- else }}
             {{- if eq .Values.mail.mode "smtp" }}
-            {{- $_ := required "mail.from is required when mail.mode=smtp" .Values.mail.from }}
-            {{- $_ := required "mail.smtpHost is required when mail.mode=smtp" .Values.mail.smtpHost }}
+            {{- $_ := required "mail.from is required when mail.mode=smtp (or set mail.existingSecret)" .Values.mail.from }}
+            {{- $_ := required "mail.smtpHost is required when mail.mode=smtp (or set mail.existingSecret)" .Values.mail.smtpHost }}
             {{- end }}
             - name: MAIL_FROM
               value: {{ .Values.mail.from | quote }}
@@ -62,7 +74,12 @@ spec:
               value: {{ .Values.mail.smtpPort | quote }}
             - name: SMTP_USERNAME
               value: {{ .Values.mail.smtpUsername | quote }}
-            {{- range $k := list "SECRET_KEY" "GOOGLE_CLIENT_ID" "GOOGLE_CLIENT_SECRET" "GITHUB_TOKEN" "SMTP_PASSWORD" }}
+            {{- end }}
+            {{- $keys := list "SECRET_KEY" "GOOGLE_CLIENT_ID" "GOOGLE_CLIENT_SECRET" "GITHUB_TOKEN" }}
+            {{- if not .Values.mail.existingSecret }}
+            {{- $keys = append $keys "SMTP_PASSWORD" }}
+            {{- end }}
+            {{- range $k := $keys }}
             - name: {{ $k }}
               valueFrom:
                 secretKeyRef:
