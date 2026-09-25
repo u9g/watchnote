@@ -1,0 +1,5 @@
+/watchnote
+/watchnote.exe
+*.db
+*.db-shm
+*.db-wal
