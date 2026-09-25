@@ -1,8 +1,14 @@
 # Watchnote
 
+A hosted instance is available at [watchnote.u9g.dev](https://watchnote.u9g.dev).
+
 Watch GitHub issues and pull requests, and get an email whenever something
 happens to them. Each email starts with the note you saved about **why** you're
 watching it.
+
+![Watched items, with the note for the selected one and its activity](docs/items.png)
+
+![Settings: default notifications, delivery and timezone](docs/settings.png)
 
 - Sign in with Google. Emails go to that address.
 - Paste an issue or PR link (or share it from your phone), write a note, and pick
