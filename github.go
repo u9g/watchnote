@@ -235,6 +235,68 @@ func (g *GitHub) Viewer(ctx context.Context, token string) (string, error) {
 	return u.Login, err
 }
 
+type ghRepo struct {
+	FullName      string `json:"full_name"`
+	DefaultBranch string `json:"default_branch"`
+	PushedAt      string `json:"pushed_at"`
+	Fork          bool   `json:"fork"`
+	Permissions   struct {
+		Push bool `json:"push"`
+	} `json:"permissions"`
+}
+
+// PushableRepos lists the repos token can see that its user can push to, forks aside.
+func (g *GitHub) PushableRepos(ctx context.Context, token string) ([]ghRepo, error) {
+	var out []ghRepo
+	for page := 1; page <= 20; page++ {
+		var rs []ghRepo
+		_, next, _, err := g.get(ctx, fmt.Sprintf("/user/repos?per_page=100&page=%d", page), token, "", &rs)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rs {
+			if r.Permissions.Push && !r.Fork {
+				out = append(out, r)
+			}
+		}
+		if !next {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (g *GitHub) BranchSHA(ctx context.Context, token, repo, branch string) (string, error) {
+	var ref struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+	}
+	_, _, _, err := g.get(ctx, "/repos/"+repo+"/git/ref/heads/"+url.PathEscape(branch), token, "", &ref)
+	return ref.Object.SHA, err
+}
+
+// Tarball downloads repo at sha as a gzipped tarball.
+func (g *GitHub) Tarball(ctx context.Context, token, repo, sha string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", g.BaseURL+"/repos/"+repo+"/tarball/"+sha, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "watchnote")
+	req.Header.Set("Authorization", "Bearer "+token)
+	client := *g.HTTP
+	client.Timeout = 5 * time.Minute // big repos take longer than API calls
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		resp.Body.Close()
+		return nil, &ghStatusError{resp.StatusCode, "tarball"}
+	}
+	return resp.Body, nil
+}
+
 // ---- timeline event classification ----
 
 type ghTimelineEvent struct {

@@ -160,6 +160,7 @@ func run() error {
 
 	go app.every(ctx, 10*time.Second, "poller", app.pollDue)
 	go app.every(ctx, 20*time.Second, "mailer", app.runMailer)
+	go app.every(ctx, 5*time.Minute, "code scanner", app.scanCode)
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: app.routes(), ReadHeaderTimeout: 10 * time.Second}
 	go func() {

@@ -40,10 +40,11 @@
       <button class="btn primary">Save settings</button>
     </form>
 
-    <div class="field-label">Private repos</div>
+    <div class="field-label">GitHub</div>
     <div class="card stack">
       {{if .User.GitHubLogin}}
-        <div>Using a GitHub token for <b>@{{.User.GitHubLogin}}</b>.</div>
+        <div>Using a GitHub token for <b>@{{.User.GitHubLogin}}</b>. Comments like
+          <code class="mono">// owner/repo#123: why</code> in repos it can push to keep those items watched.</div>
         <form method="post" action="/settings/github/remove">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <button class="btn">Remove token</button>
@@ -51,7 +52,9 @@
       {{else}}
         <div>Public issues and PRs work without this. To watch items in private repos, paste a
           <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>
-          with read-only <b>Issues</b>, <b>Pull requests</b> and <b>Metadata</b> access to those repos.</div>
+          with read-only <b>Issues</b>, <b>Pull requests</b> and <b>Metadata</b> access to those repos.
+          It also lets comments like <code class="mono">// owner/repo#123: why</code> in your repos keep those items
+          watched; for private repos, add read-only <b>Contents</b>.</div>
         <form class="paste" method="post" action="/settings/github">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <input class="input" type="password" name="token" placeholder="github_pat_…" autocomplete="off" required>

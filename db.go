@@ -98,6 +98,15 @@ CREATE TABLE IF NOT EXISTS code_refs (
 	note     TEXT NOT NULL
 );
 
+-- Repos scanned for code refs, per user.
+CREATE TABLE IF NOT EXISTS code_repos (
+	user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	repo      TEXT NOT NULL,               -- owner/name, lowercase
+	pushed_at TEXT NOT NULL,               -- GitHub's pushed_at when last scanned
+	sha       TEXT NOT NULL,               -- default branch commit last scanned
+	PRIMARY KEY (user_id, repo)
+);
+
 CREATE INDEX IF NOT EXISTS events_item ON events(item_id, id);
 CREATE INDEX IF NOT EXISTS items_poll ON items(next_poll_at);
 CREATE INDEX IF NOT EXISTS watches_item ON watches(item_id);
@@ -681,4 +690,36 @@ func (db *DB) ReplaceCodeRefs(ctx context.Context, uid int64, repo string, refs 
 		return err
 	}
 	return tx.Commit()
+}
+
+type CodeRepo struct{ PushedAt, SHA string }
+
+// CodeRepos returns the user's scanned repos by lowercase owner/name.
+func (db *DB) CodeRepos(ctx context.Context, uid int64) (map[string]CodeRepo, error) {
+	rows, err := db.QueryContext(ctx, `SELECT repo, pushed_at, sha FROM code_repos WHERE user_id = ?`, uid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]CodeRepo{}
+	for rows.Next() {
+		var name string
+		var r CodeRepo
+		if err := rows.Scan(&name, &r.PushedAt, &r.SHA); err != nil {
+			return nil, err
+		}
+		out[name] = r
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) SaveCodeRepo(ctx context.Context, uid int64, repo, pushedAt, sha string) error {
+	_, err := db.ExecContext(ctx, `INSERT INTO code_repos (user_id, repo, pushed_at, sha) VALUES (?, ?, ?, ?)
+		ON CONFLICT (user_id, repo) DO UPDATE SET pushed_at = excluded.pushed_at, sha = excluded.sha`, uid, repo, pushedAt, sha)
+	return err
+}
+
+func (db *DB) DeleteCodeRepo(ctx context.Context, uid int64, repo string) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM code_repos WHERE user_id = ? AND repo = ?`, uid, repo)
+	return err
 }

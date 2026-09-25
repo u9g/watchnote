@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -25,6 +27,11 @@ type fakeGitHub struct {
 	calls    map[string]int
 	release  string          // latest release tag, "" for none
 	inTag    map[string]bool // tags containing the merge commit
+
+	// Repos for /user/repos; me/app's default branch is at sha with files code.
+	repos []map[string]any
+	sha   string
+	code  map[string]string
 }
 
 func (f *fakeGitHub) add(ev map[string]any) {
@@ -90,6 +97,19 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": status})
 	case "/user":
 		json.NewEncoder(w).Encode(map[string]string{"login": "octocat"})
+	case "/user/repos":
+		json.NewEncoder(w).Encode(f.repos)
+	case "/repos/me/app/git/ref/heads/main":
+		json.NewEncoder(w).Encode(map[string]any{"object": map[string]string{"sha": f.sha}})
+	case "/repos/me/app/tarball/" + f.sha:
+		gz := gzip.NewWriter(w)
+		tw := tar.NewWriter(gz)
+		for name, body := range f.code {
+			tw.WriteHeader(&tar.Header{Name: "me-app-" + f.sha[:7] + "/" + name, Mode: 0o644, Size: int64(len(body))})
+			tw.Write([]byte(body))
+		}
+		tw.Close()
+		gz.Close()
 	default:
 		w.WriteHeader(404)
 		w.Write([]byte(`{"message":"Not Found"}`))

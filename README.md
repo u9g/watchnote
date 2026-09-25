@@ -18,7 +18,7 @@ watching it.
   plus a standard `List-Unsubscribe` header.
 - A userscript adds a **Watch with note** button to GitHub issue and PR pages.
 - A code comment like `// owner/repo#123: why` keeps that item watched until the
-  comment is deleted, synced by your repo's CI.
+  comment is deleted from your repo.
 - Private repos work if you save a read-only fine-grained GitHub token in Settings.
 
 It's a single Go binary with server-rendered HTML and SQLite. It works on phones
@@ -132,40 +132,14 @@ Notes are edited in the web app.
 
 ## Watching from code comments
 
-When code exists because of an issue or PR, say so above it, on a line of its own:
-
-```go
-    // octo/hello#7: Retry until shutdown stops racing; delete once this is fixed.
-```
-
-Any `//`, `#`, `--`, `;` or `/* */` comment works. A CI step sends the repo's matching
-lines to `PUT /api/sync`, which watches every referenced item and shows the comment,
-linked to its line, as the note. When a comment disappears, so does its reference,
-and a watch left with no references and no note of its own is stopped. Put this in
-`.github/workflows/watchnote.yml`, with a token from Settings in the `WATCHNOTE_TOKEN`
-secret:
-
-```yaml
-name: Watchnote
-on:
-  push:
-    branches: [main]
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: |
-          { git grep -InE '[[:alnum:]_.-]+/[[:alnum:]_.-]+#[0-9]+:' || true; } |
-            curl -sS --fail-with-body -X PUT --data-binary @- \
-              -H "Authorization: Bearer $WATCHNOTE_TOKEN" \
-              "https://watchnote.example.com/api/sync?repo=$GITHUB_REPOSITORY&sha=$GITHUB_SHA"
-        env:
-          WATCHNOTE_TOKEN: ${{ secrets.WATCHNOTE_TOKEN }}
-```
-
-The step fails (HTTP 422) when a reference can't be watched, such as a typo. Every
-other reference still syncs.
+When code exists because of an issue or PR, say so in a comment on its own line above
+it, like `// octo/hello#7: Retry until shutdown stops racing; delete once this is fixed.`
+Any `//`, `#`, `--`, `;` or `/* */` comment works. With a GitHub token saved in
+Settings, Watchnote reads the default branch of every repo the token can push to
+(forks aside), again after each push, and watches every item referenced this way. The
+comment, linked to its line, is shown as the note. When a comment is deleted, its
+reference goes too, and a watch left with no references and no note of its own
+stops. For private repos, the token needs read-only **Contents** access.
 
 ## MCP
 

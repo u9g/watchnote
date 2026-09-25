@@ -113,8 +113,8 @@ func (a *App) mcpServer(u *User) *mcp.Server {
 		Instructions: "Watchnote emails the user when GitHub issues and PRs they watch change. Each watch has a " +
 			"Markdown note saying why the user cares; read it before acting on a watch, and write one that will make sense " +
 			"to them months later when adding a watch. If the reason is code in a git repo, don't call watch: add a comment " +
-			"on its own line above that code, like `// owner/repo#123: why this code depends on it`. The repo's CI syncs " +
-			"those comments, and deleting the comment stops the watch.",
+			"on its own line above that code, like `// owner/repo#123: why this code depends on it`. Watchnote scans " +
+			"the repos the user's saved GitHub token can push to, and deleting the comment stops the watch.",
 	})
 	own := func(ctx context.Context, id int64) (*Watch, error) {
 		w, err := a.db.UserWatch(ctx, u.ID, id)
