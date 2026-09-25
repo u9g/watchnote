@@ -1,0 +1,25 @@
+{{define "content"}}
+<main class="landing">
+  <div class="logo big"><i></i>Watchnote</div>
+  <h1>Watch GitHub issues &amp; PRs.<br>Remember why.</h1>
+  <p class="muted">Paste a link and add a note. We'll email you when anything changes, with your note at the top.</p>
+  <div class="card sample">
+    <div class="meta"><span class="badge open">Open PR</span> vercel/next.js #58112</div>
+    <div class="title">Middleware breaks with edge runtime</div>
+    <div class="note">Blocks our upgrade to v15. Check when fixed.</div>
+  </div>
+  {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+  {{if .GoogleOn}}
+  <a class="btn google" href="/auth/google?next={{.Next}}"><span class="g"></span>Continue with Google</a>
+  <div class="muted small">We only ask for your name and email address.</div>
+  {{end}}
+  {{if .DevLogin}}
+  <form class="dev" method="post" action="/auth/dev">
+    <div class="field-label">Dev login (DEV_LOGIN=true)</div>
+    <input type="hidden" name="next" value="{{.Next}}">
+    <input class="input" type="email" name="email" placeholder="you@example.com" required>
+    <button class="btn">Sign in</button>
+  </form>
+  {{end}}
+</main>
+{{end}}

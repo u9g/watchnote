@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "watchnote.fullname" . }}
+  labels:
+    {{- include "watchnote.labels" . | nindent 4 }}
+spec:
+  # SQLite + in-process poller: exactly one pod, and the old one must stop
+  # before the new one opens the database.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "watchnote.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "watchnote.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{- if not .Values.existingSecret }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: watchnote
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: BASE_URL
+              value: {{ required "baseUrl is required" .Values.baseUrl | trimSuffix "/" | quote }}
+            - name: DATABASE_PATH
+              value: /data/watchnote.db
+            - name: MAIL_MODE
+              value: {{ .Values.mail.mode | quote }}
+            {{- if eq .Values.mail.mode "smtp" }}
+            {{- $_ := required "mail.from is required when mail.mode=smtp" .Values.mail.from }}
+            {{- $_ := required "mail.smtpHost is required when mail.mode=smtp" .Values.mail.smtpHost }}
+            {{- end }}
+            - name: MAIL_FROM
+              value: {{ .Values.mail.from | quote }}
+            - name: SMTP_HOST
+              value: {{ .Values.mail.smtpHost | quote }}
+            - name: SMTP_PORT
+              value: {{ .Values.mail.smtpPort | quote }}
+            - name: SMTP_USERNAME
+              value: {{ .Values.mail.smtpUsername | quote }}
+            {{- range $k := list "SECRET_KEY" "GOOGLE_CLIENT_ID" "GOOGLE_CLIENT_SECRET" "GITHUB_TOKEN" "SMTP_PASSWORD" }}
+            - name: {{ $k }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "watchnote.secretName" $ }}
+                  key: {{ $k }}
+                  {{- if has $k (list "GITHUB_TOKEN" "SMTP_PASSWORD") }}
+                  optional: true
+                  {{- end }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            failureThreshold: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (include "watchnote.fullname" .) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

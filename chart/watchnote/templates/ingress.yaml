@@ -1,0 +1,32 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "watchnote.fullname" . }}
+  labels:
+    {{- include "watchnote.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts: [{{ include "watchnote.host" . | quote }}]
+      secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" (include "watchnote.fullname" .)) }}
+  {{- end }}
+  rules:
+    - host: {{ include "watchnote.host" . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "watchnote.fullname" . }}
+                port:
+                  name: http
+{{- end }}
