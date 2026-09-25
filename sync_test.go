@@ -98,6 +98,8 @@ func TestParseCodeRef(t *testing.T) {
 		" * o/r#4: continued block",
 		";; o/r#5: lisp",
 		"x() // o/r#6: trailing",
+		"+  // o/r#7: added by a patch",
+		"-  // o/r#9: removed by a patch",
 		"// o/r#8:",
 		"// o/r#0: zero",
 	}
@@ -107,7 +109,7 @@ func TestParseCodeRef(t *testing.T) {
 			got = append(got, target.String()+" "+note)
 		}
 	}
-	want := []string{"o/r#1 slashes", "o/r#2 dashes", "o/r#3 block", "o/r#4 continued block", "o/r#5 lisp"}
+	want := []string{"o/r#1 slashes", "o/r#2 dashes", "o/r#3 block", "o/r#4 continued block", "o/r#5 lisp", "o/r#7 added by a patch"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %q", got)
 	}

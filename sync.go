@@ -20,8 +20,9 @@ import (
 //	// octo/hello#7: We need this until the upstream fix ships.
 //
 // keeps octo/hello#7 watched for as long as the comment is on the default
-// branch. Watchnote scans the repos a user's saved GitHub token can push to,
-// again whenever they're pushed to.
+// branch. An added line in a patch file (`+  // octo/hello#7: …`) counts too.
+// Watchnote scans the repos a user's saved GitHub token can push to, again
+// whenever they're pushed to.
 
 type CodeRef struct {
 	WatchID int64
@@ -37,7 +38,7 @@ func (c CodeRef) URL() string {
 	return fmt.Sprintf("https://github.com/%s/blob/%s/%s#L%d", c.Repo, c.SHA, (&url.URL{Path: c.Path}).EscapedPath(), c.Line)
 }
 
-var codeRefRe = regexp.MustCompile(`^\s*(?://+|#+|--+|;+|/\*+|\*+)\s*([\w.-]+)/([\w.-]+)#(\d+):\s*(\S.*?)\s*(?:\*/)?\s*$`)
+var codeRefRe = regexp.MustCompile(`^\+?\s*(?://+|#+|--+|;+|/\*+|\*+)\s*([\w.-]+)/([\w.-]+)#(\d+):\s*(\S.*?)\s*(?:\*/)?\s*$`)
 
 const (
 	maxScanFile      = 1 << 20
