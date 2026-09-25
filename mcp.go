@@ -38,7 +38,7 @@ type mcpWatch struct {
 	Kind      string `json:"kind" jsonschema:"issue or pr"`
 	Title     string `json:"title"`
 	State     string `json:"state" jsonschema:"open, closed or merged"`
-	Note      string `json:"note" jsonschema:"why the user is watching it"`
+	Note      string `json:"note" jsonschema:"why the user is watching it, in Markdown"`
 	Status    string `json:"status" jsonschema:"active, muted or done"`
 	Filter    string `json:"filter" jsonschema:"comma-separated kinds of update that are emailed"`
 	Delivery  string `json:"delivery" jsonschema:"instant or digest"`
@@ -85,7 +85,7 @@ type getWatchOut struct {
 
 type watchIn struct {
 	URL    string `json:"url" jsonschema:"a GitHub issue or pull request URL, or owner/repo#number"`
-	Note   string `json:"note" jsonschema:"why the user wants to watch it; it heads every email about it"`
+	Note   string `json:"note" jsonschema:"why the user wants to watch it, in Markdown; it heads every email about it"`
 	Preset string `json:"preset,omitempty" jsonschema:"everything or status (only merged/closed/reopened); the user's default if omitted"`
 }
 
@@ -96,7 +96,7 @@ type watchOut struct {
 
 type updateNoteIn struct {
 	ID   int64  `json:"id"`
-	Note string `json:"note"`
+	Note string `json:"note" jsonschema:"the new note, in Markdown"`
 }
 
 type setStatusIn struct {
@@ -111,7 +111,7 @@ type stopOut struct {
 func (a *App) mcpServer(u *User) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "watchnote", Title: "Watchnote", Version: version}, &mcp.ServerOptions{
 		Instructions: "Watchnote emails the user when GitHub issues and PRs they watch change. Each watch has a " +
-			"note saying why the user cares; read it before acting on a watch, and write one that will make sense " +
+			"Markdown note saying why the user cares; read it before acting on a watch, and write one that will make sense " +
 			"to them months later when adding a watch.",
 	})
 	own := func(ctx context.Context, id int64) (*Watch, error) {

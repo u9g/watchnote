@@ -24,7 +24,7 @@
       <a class="card watch{{if and $.Selected (eq $.Selected.ID .ID)}} sel{{end}}" href="/items/{{.ID}}">
         <div class="meta">{{if .NewCount}}<span class="dot"></span>{{end}}{{template "badge" .Item}} {{.Item.Owner}}/{{.Item.Repo}} #{{.Item.Number}}{{if .NewCount}} · {{.NewCount}} new{{end}}</div>
         <div class="title">{{.Item.Title}}</div>
-        <div class="note plain">{{.Note}}</div>
+        <div class="note plain"><div class="clamp">{{markdownPreview .Note}}</div></div>
       </a>
       {{else}}
         {{if .Q}}
@@ -51,7 +51,7 @@
       <div class="meta">{{template "badge" .Item}} {{.Item.Owner}}/{{.Item.Repo}} #{{.Item.Number}}{{if eq .Status "muted"}} · muted{{else if eq .Status "done"}} · done{{end}}</div>
       <h2><a href="{{.Item.HTMLURL}}" target="_blank" rel="noopener">{{.Item.Title}}</a></h2>
       <div class="meta">by {{.Item.Author}} · {{.Item.Comments}} comments · updated {{ago .Item.GHUpdatedAt}}</div>
-      <div class="note">{{.Note}} <button type="button" class="link" data-open="edit-note">Edit</button></div>
+      <div class="note">{{markdown .Note}}<button type="button" class="link" data-open="edit-note">Edit</button></div>
       {{if .Item.LastError}}<div class="warn">Last check failed: {{.Item.LastError}}</div>{{end}}
 
       <div class="field-label">Activity</div>

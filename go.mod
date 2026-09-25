@@ -4,6 +4,7 @@ go 1.27.1
 
 require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/yuin/goldmark v1.8.6
 	modernc.org/sqlite v1.33.1
 )
 

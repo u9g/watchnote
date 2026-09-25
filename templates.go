@@ -10,12 +10,50 @@ import (
 	"strings"
 	texttemplate "text/template"
 	"time"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/util"
 )
 
 //go:embed templates static
 var assets embed.FS
 
+// Goldmark escapes raw HTML and drops unsafe link schemes by default, so its
+// output is safe to mark as template.HTML.
+var md = goldmark.New(goldmark.WithExtensions(extension.GFM))
+
+// mdPreview renders links as their text, for notes shown inside a link.
+var mdPreview = goldmark.New(goldmark.WithExtensions(extension.GFM),
+	goldmark.WithRendererOptions(renderer.WithNodeRenderers(util.Prioritized(linkText{}, 0))))
+
+type linkText struct{}
+
+func (linkText) RegisterFuncs(r renderer.NodeRendererFuncRegisterer) {
+	r.Register(ast.KindLink, func(util.BufWriter, []byte, ast.Node, bool) (ast.WalkStatus, error) {
+		return ast.WalkContinue, nil
+	})
+	r.Register(ast.KindAutoLink, func(w util.BufWriter, src []byte, n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if entering {
+			w.Write(util.EscapeHTML(n.(*ast.AutoLink).Label(src)))
+		}
+		return ast.WalkContinue, nil
+	})
+}
+
+func renderMarkdown(m goldmark.Markdown, s string) template.HTML {
+	var b bytes.Buffer
+	if err := m.Convert([]byte(s), &b); err != nil {
+		return template.HTML(template.HTMLEscapeString(s))
+	}
+	return template.HTML(b.String())
+}
+
 var funcs = map[string]any{
+	"markdown":        func(s string) template.HTML { return renderMarkdown(md, s) },
+	"markdownPreview": func(s string) template.HTML { return renderMarkdown(mdPreview, s) },
 	"ago": func(unix int64) string {
 		if unix == 0 {
 			return "never"
