@@ -38,7 +38,7 @@ type mcpWatch struct {
 	Kind      string `json:"kind" jsonschema:"issue or pr"`
 	Title     string `json:"title"`
 	State     string `json:"state" jsonschema:"open, closed or merged"`
-	Note      string `json:"note" jsonschema:"why the user is watching it, in Markdown"`
+	Note      string `json:"note" jsonschema:"why the user is watching it, in Markdown, followed by any code comments that reference it"`
 	Status    string `json:"status" jsonschema:"active, muted or done"`
 	Filter    string `json:"filter" jsonschema:"comma-separated kinds of update that are emailed"`
 	Delivery  string `json:"delivery" jsonschema:"instant or digest"`
@@ -59,7 +59,7 @@ type mcpEvent struct {
 func (a *App) toMCPWatch(w *Watch) mcpWatch {
 	return mcpWatch{
 		ID: w.ID, Ref: w.Item.Ref(), Kind: w.Item.Kind, Title: w.Item.Title, State: w.Item.State,
-		Note: w.Note, Status: w.Status, Filter: w.Filter, Delivery: w.Delivery, NewEvents: w.NewCount,
+		Note: w.Why(), Status: w.Status, Filter: w.Filter, Delivery: w.Delivery, NewEvents: w.NewCount,
 		GitHubURL: w.Item.HTMLURL, AppURL: fmt.Sprintf("%s/items/%d", a.cfg.BaseURL, w.ID),
 		SavedAt: time.Unix(w.CreatedAt, 0).UTC().Format(time.RFC3339),
 	}
@@ -112,7 +112,9 @@ func (a *App) mcpServer(u *User) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "watchnote", Title: "Watchnote", Version: version}, &mcp.ServerOptions{
 		Instructions: "Watchnote emails the user when GitHub issues and PRs they watch change. Each watch has a " +
 			"Markdown note saying why the user cares; read it before acting on a watch, and write one that will make sense " +
-			"to them months later when adding a watch.",
+			"to them months later when adding a watch. If the reason is code in a git repo, don't call watch: add a comment " +
+			"on its own line above that code, like `// owner/repo#123: why this code depends on it`. Watchnote scans " +
+			"the repos the user's saved GitHub token can push to, and deleting the comment stops the watch.",
 	})
 	own := func(ctx context.Context, id int64) (*Watch, error) {
 		w, err := a.db.UserWatch(ctx, u.ID, id)
@@ -157,7 +159,8 @@ func (a *App) mcpServer(u *User) *mcp.Server {
 			return nil, out, err
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "watch", Description: "Start watching a GitHub issue or PR, with a note on why.",
+	mcp.AddTool(s, &mcp.Tool{Name: "watch", Description: "Start watching a GitHub issue or PR, with a note on why. " +
+		"If the reason is code in a git repo, add an `// owner/repo#123: why` comment above that code instead.",
 		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, OpenWorldHint: ptr(true)}},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in watchIn) (*mcp.CallToolResult, watchOut, error) {
 			ref, ok := parseRef(in.URL)
@@ -179,7 +182,7 @@ func (a *App) mcpServer(u *User) *mcp.Server {
 			return nil, watchOut{Watch: a.toMCPWatch(w), Created: created}, nil
 		})
 
-	mcp.AddTool(s, &mcp.Tool{Name: "update_note", Description: "Replace a watch's note. Future emails use the new one.",
+	mcp.AddTool(s, &mcp.Tool{Name: "update_note", Description: "Replace a watch's note. Future emails use the new one. Code comments that reference the item stay; edit those in the code.",
 		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, DestructiveHint: ptr(false)}},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in updateNoteIn) (*mcp.CallToolResult, mcpWatch, error) {
 			w, err := own(ctx, in.ID)
@@ -220,6 +223,10 @@ func (a *App) mcpServer(u *User) *mcp.Server {
 			w, err := own(ctx, in.ID)
 			if err != nil {
 				return nil, stopOut{}, err
+			}
+			if len(w.Refs) > 0 {
+				c := w.Refs[0]
+				return nil, stopOut{}, fmt.Errorf("code comments keep this watched, e.g. %s/%s:%d; delete them instead", c.Repo, c.Path, c.Line)
 			}
 			return nil, stopOut{Stopped: w.Item.Ref()}, a.db.DeleteWatch(ctx, w.ID)
 		})

@@ -1,4 +1,4 @@
-WHY YOU SAVED THIS: {{.Watch.Note}}
+WHY YOU SAVED THIS: {{.Watch.Why}}
 ({{.Saved}})
 
 {{.Item.Title}}

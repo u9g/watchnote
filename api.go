@@ -56,7 +56,7 @@ type apiWatch struct {
 
 func (a *App) apiWatchBody(wt *Watch) apiWatch {
 	return apiWatch{Watching: true, ID: wt.ID, URL: fmt.Sprintf("%s/items/%d", a.cfg.BaseURL, wt.ID),
-		Status: wt.Status, Note: wt.Note}
+		Status: wt.Status, Note: wt.Why()}
 }
 
 func (a *App) apiLookup(w http.ResponseWriter, r *http.Request, u *User) {
