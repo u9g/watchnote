@@ -82,6 +82,9 @@ Notes:
   To manage secrets yourself, set `existingSecret` to a Secret with keys `SECRET_KEY`,
   `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and optionally `GITHUB_TOKEN` and
   `SMTP_PASSWORD`.
+- To keep the mail settings in a Secret too, set `mail.existingSecret` to one with
+  keys `MAIL_FROM` and `SMTP_HOST`, and optionally `SMTP_PORT`, `SMTP_USERNAME` and
+  `SMTP_PASSWORD`. Pods read it at start, so restart the Deployment after changing it.
 - While the GHCR package is private, create a pull secret and set
   `imagePullSecrets: [{name: ghcr-pull}]`.
 

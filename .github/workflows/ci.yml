@@ -34,6 +34,9 @@ jobs:
             --set secrets.googleClientId=id --set secrets.googleClientSecret=secret \
             --set mail.from=notify@example.com --set mail.smtpHost=smtp.example.com \
             --set ingress.enabled=true --set ingress.tls.enabled=true
+          helm lint chart/watchnote --strict \
+            --set baseUrl=https://watchnote.example.com --set existingSecret=watchnote \
+            --set mail.existingSecret=watchnote-smtp
 
   image:
     needs: [test, chart]
