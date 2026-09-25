@@ -1,0 +1,21 @@
+WHY YOU SAVED THIS: {{.Watch.Note}}
+({{.Saved}})
+
+{{.Item.Title}}
+{{.Item.Ref}} · {{stateLabel .Item}}
+
+{{.Headline.Summary}}
+{{if .Headline.Body}}
+{{.Headline.Body}}
+{{end}}{{if .Others}}
+Also since your last email:
+{{range .Others}}- {{.Summary}}
+{{end}}{{end}}{{if .Resolved}}
+Is that what you were waiting for? Mark it done: {{.Links.Done}}
+{{end}}
+View on GitHub: {{.Links.GitHub}}
+Edit note: {{.Links.EditNote}}
+
+Mute this item: {{.Links.Mute}}
+Status changes only: {{.Links.StatusOnly}}
+Stop watching: {{.Links.Stop}}

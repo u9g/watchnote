@@ -1,0 +1,30 @@
+{{define "logo"}}<a class="logo" href="/items"><i></i>Watchnote</a>{{end}}
+
+{{define "avatar"}}{{if .Picture}}<img class="avatar" src="{{.Picture}}" alt="" referrerpolicy="no-referrer">{{else}}<span class="avatar">{{initial .Email}}</span>{{end}}{{end}}
+
+{{define "badge"}}<span class="badge {{.State}}">{{stateLabel .}}</span>{{end}}
+
+{{define "tabs"}}
+<a class="{{if eq .Tab "active"}}on{{end}}" href="/items?tab=active">Active <span>{{index .Counts "active"}}</span></a>
+<a class="{{if eq .Tab "done"}}on{{end}}" href="/items?tab=done">Done <span>{{index .Counts "done"}}</span></a>
+<a class="{{if eq .Tab "muted"}}on{{end}}" href="/items?tab=muted">Muted <span>{{index .Counts "muted"}}</span></a>
+{{end}}
+
+{{/* Notification preferences. Expects .Filter and .Delivery. */}}
+{{define "prefs"}}
+<div class="field-label">Email me about</div>
+<div class="chips" data-presets>
+  <button type="button" class="chip" data-preset="{{"comments,reviews,commits,labels,state,other"}}">Everything</button>
+  <button type="button" class="chip" data-preset="state">Status only</button>
+</div>
+<div class="card toggles">
+  {{$f := .Filter}}{{range categories}}
+  <label class="toggle-row"><span>{{.Label}}</span><input type="checkbox" class="sw" name="cat" value="{{.Key}}"{{if inFilter $f .Key}} checked{{end}}></label>
+  {{end}}
+</div>
+<div class="field-label">Delivery</div>
+<div class="chips">
+  <label class="chip radio"><input type="radio" name="delivery" value="instant"{{if ne .Delivery "digest"}} checked{{end}}>Instantly</label>
+  <label class="chip radio"><input type="radio" name="delivery" value="digest"{{if eq .Delivery "digest"}} checked{{end}}>Daily digest</label>
+</div>
+{{end}}

@@ -1,0 +1,9 @@
+apiVersion: v2
+name: watchnote
+description: Watch GitHub issues and PRs and get emailed when they change, with your note about why.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/u9g/watchnote
+sources:
+  - https://github.com/u9g/watchnote

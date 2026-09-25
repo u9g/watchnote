@@ -1,0 +1,28 @@
+{{define "content"}}
+<div class="narrow">
+  <header class="appbar">{{template "logo"}}<span></span></header>
+  <div class="page-body">
+    {{with .ActionWatch}}
+    <div class="card">
+      <div class="meta">{{template "badge" .Item}} {{.Item.Owner}}/{{.Item.Repo}} #{{.Item.Number}}</div>
+      <div class="title">{{.Item.Title}}</div>
+      <div class="note">{{.Note}}</div>
+    </div>
+    {{end}}
+    {{if .ActionDone}}
+      <div class="ok">{{if eq .Action "stop"}}Stopped watching.{{else}}Done: {{.ActionTitle}}.{{end}}</div>
+      {{if and .ActionWatch (ne .Action "stop")}}<p class="muted">{{.ActionDesc}}</p>{{end}}
+      <a class="btn" href="/items">Open Watchnote</a>
+    {{else}}
+      <h2>{{.ActionTitle}}?</h2>
+      <p class="muted">{{.ActionDesc}}</p>
+      <form method="post" action="/e/{{.Action}}">
+        <input type="hidden" name="w" value="{{.WatchID}}">
+        <input type="hidden" name="s" value="{{.Sig}}">
+        <button class="btn primary">{{.ActionTitle}}</button>
+      </form>
+      <a class="btn ghost" href="/items">Cancel</a>
+    {{end}}
+  </div>
+</div>
+{{end}}

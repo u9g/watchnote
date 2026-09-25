@@ -1,0 +1,52 @@
+<!doctype html>
+<html><body style="margin:0;padding:0;background:#f4f1ec;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1d1d1f">
+<div style="display:none;max-height:0;overflow:hidden">📝 {{.Watch.Note}} — {{.Headline.Summary}}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border-radius:12px">
+<tr><td style="padding:20px 22px">
+
+  <div style="background:#fff7d6;border:1px solid #f0d98a;border-radius:8px;padding:10px 12px;color:#5a4a12;font-size:14px;line-height:1.45">
+    <b>Why you saved this:</b> {{.Watch.Note}}
+    <div style="font-size:12px;color:#8a7a3a;margin-top:4px">{{.Saved}}</div>
+  </div>
+
+  <p style="margin:18px 0 4px;font-size:16px;font-weight:700;line-height:1.3">
+    <a href="{{.Item.HTMLURL}}" style="color:#1d1d1f;text-decoration:none">{{.Item.Title}}</a>
+  </p>
+  <p style="margin:0 0 16px;font-size:13px;color:#6b6b70">{{.Item.Ref}} · {{stateLabel .Item}}</p>
+
+  <p style="margin:0 0 8px;font-size:14px"><b>{{.Headline.Summary}}</b></p>
+  {{if .Headline.Body}}<div style="border-left:3px solid #ddd;padding:6px 12px;color:#444;background:#fafafa;font-size:14px;line-height:1.5;white-space:pre-wrap">{{.Headline.Body}}</div>{{end}}
+
+  {{if .Others}}
+  <p style="margin:16px 0 6px;font-size:13px;color:#6b6b70">Also since your last email:</p>
+  <ul style="margin:0;padding-left:18px;font-size:13px;color:#444;line-height:1.6">
+    {{range .Others}}<li>{{if .URL}}<a href="{{.URL}}" style="color:#444">{{.Summary}}</a>{{else}}{{.Summary}}{{end}}</li>{{end}}
+  </ul>
+  {{end}}
+
+  {{if .Resolved}}
+  <p style="margin:20px 0 8px;font-size:14px;font-weight:700">Is that what you were waiting for?</p>
+  <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+    <td style="background:#2f6fed;border-radius:8px"><a href="{{.Links.Done}}" style="display:inline-block;padding:10px 16px;color:#fff;font-weight:600;font-size:14px;text-decoration:none">Yes, mark done</a></td>
+    <td width="8"></td>
+    <td style="border:1px solid #ddd;border-radius:8px"><a href="{{.Links.GitHub}}" style="display:inline-block;padding:9px 16px;color:#1d1d1f;font-weight:600;font-size:14px;text-decoration:none">View on GitHub</a></td>
+  </tr></table>
+  {{else}}
+  <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:20px"><tr>
+    <td style="background:#2f6fed;border-radius:8px"><a href="{{.Links.GitHub}}" style="display:inline-block;padding:10px 16px;color:#fff;font-weight:600;font-size:14px;text-decoration:none">View on GitHub</a></td>
+    <td width="8"></td>
+    <td style="border:1px solid #ddd;border-radius:8px"><a href="{{.Links.EditNote}}" style="display:inline-block;padding:9px 16px;color:#1d1d1f;font-weight:600;font-size:14px;text-decoration:none">Edit note</a></td>
+  </tr></table>
+  {{end}}
+
+</td></tr>
+<tr><td style="padding:12px 22px;border-top:1px solid #eee;font-size:12px;color:#6b6b70">
+  <a href="{{.Links.Mute}}" style="color:#6b6b70">Mute this item</a> ·
+  <a href="{{.Links.StatusOnly}}" style="color:#6b6b70">Status changes only</a> ·
+  <a href="{{.Links.Stop}}" style="color:#6b6b70">Stop watching</a> ·
+  <a href="{{.Links.Settings}}" style="color:#6b6b70">Settings</a>
+</td></tr>
+</table>
+</td></tr></table>
+</body></html>

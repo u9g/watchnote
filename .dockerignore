@@ -1,0 +1,7 @@
+.git
+.github
+chart
+*.db
+*.db-*
+watchnote
+watchnote.exe

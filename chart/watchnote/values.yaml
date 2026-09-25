@@ -1,0 +1,75 @@
+# -- Public URL Watchnote is served at, without a trailing slash. Used for the
+# Google OAuth redirect (<baseUrl>/auth/google/callback) and links in emails. Required.
+baseUrl: ""
+
+image:
+  repository: ghcr.io/u9g/watchnote
+  # -- Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# -- Needed while the GHCR package is private, e.g. [{name: ghcr-pull}].
+imagePullSecrets: []
+
+mail:
+  # -- smtp, or log to print emails to stdout instead of sending them.
+  mode: smtp
+  # -- e.g. "Watchnote <notify@example.com>". The domain should have SPF/DKIM set up.
+  from: ""
+  smtpHost: ""
+  # -- 587 uses STARTTLS; 465 uses implicit TLS.
+  smtpPort: 587
+  smtpUsername: ""
+
+# -- Secret values. Ignored when existingSecret is set.
+secrets:
+  # -- Signs sessions and email links and encrypts saved GitHub tokens.
+  # Left empty, a random one is generated on install and kept across upgrades.
+  secretKey: ""
+  googleClientId: ""
+  googleClientSecret: ""
+  # -- Recommended: without it GitHub allows only 60 API calls/hour. A token with
+  # no scopes is enough for public repos.
+  githubToken: ""
+  smtpPassword: ""
+
+# -- Use your own Secret with keys SECRET_KEY, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+# and optionally GITHUB_TOKEN and SMTP_PASSWORD.
+existingSecret: ""
+
+# -- Extra environment variables for the container.
+extraEnv: []
+
+# Watchnote keeps its data in SQLite and runs the poller in-process, so it
+# always runs as a single replica with a ReadWriteOnce volume.
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+  existingClaim: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # -- Defaults to the host in baseUrl.
+  host: ""
+  tls:
+    enabled: false
+    secretName: ""
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 256Mi
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

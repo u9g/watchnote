@@ -1,0 +1,18 @@
+Watchnote is deploying at {{ .Values.baseUrl }}
+
+1. In Google Cloud Console → APIs & Services → Credentials, the OAuth client must list
+   this authorized redirect URI:
+     {{ .Values.baseUrl | trimSuffix "/" }}/auth/google/callback
+
+2. Check it's up:
+     kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "watchnote.fullname" . }}
+     kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "watchnote.fullname" . }}
+{{- if not .Values.ingress.enabled }}
+
+3. No ingress is enabled. To try it locally:
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "watchnote.fullname" . }} 8080:{{ .Values.service.port }}
+{{- end }}
+{{- if and (not .Values.existingSecret) (not .Values.secrets.githubToken) }}
+
+WARNING: secrets.githubToken is empty, so GitHub limits Watchnote to 60 API calls per hour.
+{{- end }}

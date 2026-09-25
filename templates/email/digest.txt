@@ -1,0 +1,16 @@
+Your Watchnote digest
+{{range .Entries}}
+==========================================
+WHY YOU SAVED THIS: {{.Watch.Note}}
+({{.Saved}})
+
+{{.Item.Title}}
+{{.Item.Ref}} · {{stateLabel .Item}}
+{{range .Events}}- {{.Summary}}
+{{end}}
+{{.Item.HTMLURL}}
+Edit note: {{.Links.EditNote}}
+Mark done: {{.Links.Done}}
+Stop watching: {{.Links.Stop}}
+{{end}}
+Settings: {{.BaseURL}}/settings

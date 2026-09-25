@@ -1,0 +1,113 @@
+{{define "content"}}
+<div class="shell{{if .Selected}} has-detail{{end}}">
+  <nav class="side">
+    {{template "logo"}}
+    <div class="side-tabs">{{template "tabs" .}}</div>
+    <a class="side-link" href="/settings">⚙ Settings</a>
+  </nav>
+
+  <main class="list">
+    <header class="appbar mobile-only">{{template "logo"}}<a href="/settings" aria-label="Settings">{{template "avatar" .User}}</a></header>
+    <div class="tabs mobile-only">{{template "tabs" .}}</div>
+    <div class="list-body">
+      <form class="paste" method="get" action="/items/new">
+        <input class="input" name="url" placeholder="Paste a GitHub issue or PR link…" autocomplete="off" inputmode="url">
+        <button class="btn primary">Watch</button>
+      </form>
+      {{if or .Watches .Q}}
+      <form class="search" method="get" action="/items">
+        <input type="hidden" name="tab" value="{{.Tab}}">
+        <input class="input" type="search" name="q" value="{{.Q}}" placeholder="🔍 Search titles &amp; notes">
+      </form>
+      {{end}}
+      {{range .Watches}}
+      <a class="card watch{{if and $.Selected (eq $.Selected.ID .ID)}} sel{{end}}" href="/items/{{.ID}}">
+        <div class="meta">{{if .NewCount}}<span class="dot"></span>{{end}}{{template "badge" .Item}} {{.Item.Owner}}/{{.Item.Repo}} #{{.Item.Number}}{{if .NewCount}} · {{.NewCount}} new{{end}}</div>
+        <div class="title">{{.Item.Title}}</div>
+        <div class="note plain">{{.Note}}</div>
+      </a>
+      {{else}}
+        {{if .Q}}
+        <div class="empty"><div class="muted">Nothing matches “{{.Q}}”.</div></div>
+        {{else if eq .Tab "active"}}
+        <div class="empty">
+          <div class="emoji">🔖</div>
+          <div class="title">Nothing watched yet</div>
+          <div class="muted">Paste any GitHub issue or PR link above to start.</div>
+          <div class="muted small">Tip: install Watchnote to your home screen, then share GitHub links to it. On desktop, add the GitHub button from Settings.</div>
+        </div>
+        {{else}}
+        <div class="empty"><div class="muted">Nothing here.</div></div>
+        {{end}}
+      {{end}}
+    </div>
+    <a class="fab mobile-only" href="/items/new" aria-label="Watch something">+</a>
+  </main>
+
+  <section class="detail">
+  {{with .Selected}}
+    <header class="appbar mobile-only"><a href="/items?tab={{.Status}}">‹ Back</a><b>#{{.Item.Number}}</b><span></span></header>
+    <div class="detail-body">
+      <div class="meta">{{template "badge" .Item}} {{.Item.Owner}}/{{.Item.Repo}} #{{.Item.Number}}{{if eq .Status "muted"}} · muted{{else if eq .Status "done"}} · done{{end}}</div>
+      <h2><a href="{{.Item.HTMLURL}}" target="_blank" rel="noopener">{{.Item.Title}}</a></h2>
+      <div class="meta">by {{.Item.Author}} · {{.Item.Comments}} comments · updated {{ago .Item.GHUpdatedAt}}</div>
+      <div class="note">{{.Note}} <button type="button" class="link" data-open="edit-note">Edit</button></div>
+      {{if .Item.LastError}}<div class="warn">Last check failed: {{.Item.LastError}}</div>{{end}}
+
+      <div class="field-label">Activity</div>
+      <div class="timeline">
+        {{range $.Events}}
+        <div class="{{if isNew . $.NewSince}}new{{end}}">
+          {{if .URL}}<a href="{{.URL}}" target="_blank" rel="noopener">{{.Summary}}</a>{{else}}{{.Summary}}{{end}} <span class="muted">· {{ago .OccurredAt}}</span>
+          {{if .Body}}<div class="excerpt">{{.Body}}</div>{{end}}
+        </div>
+        {{end}}
+        <div class="muted start">You started watching · {{ago .CreatedAt}}</div>
+      </div>
+
+      <details class="prefs">
+        <summary>Notification settings</summary>
+        <form method="post" action="/items/{{.ID}}/prefs">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          {{template "prefs" .}}
+          <button class="btn">Save</button>
+        </form>
+      </details>
+
+      <div class="actions">
+        <a class="btn primary" href="{{.Item.HTMLURL}}" target="_blank" rel="noopener">Open on GitHub</a>
+        <form method="post" action="/items/{{.ID}}/status">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          {{if eq .Status "muted"}}<button class="btn" name="status" value="active">Unmute</button>
+          {{else}}<button class="btn" name="status" value="muted">Mute</button>{{end}}
+        </form>
+        <form method="post" action="/items/{{.ID}}/status">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          {{if eq .Status "done"}}<button class="btn" name="status" value="active">Move to Active</button>
+          {{else}}<button class="btn" name="status" value="done">Mark done</button>{{end}}
+        </form>
+        <form method="post" action="/items/{{.ID}}/delete" data-confirm="Stop watching this and delete your note?">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}">
+          <button class="btn danger">Stop watching</button>
+        </form>
+      </div>
+    </div>
+
+    <dialog id="edit-note" class="sheet">
+      <form method="post" action="/items/{{.ID}}/note">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <b>Why are you watching this?</b>
+        <textarea class="input" name="note" rows="5" maxlength="2000" required>{{.Note}}</textarea>
+        <div class="muted small">Future emails will use the updated note.</div>
+        <div class="row">
+          <button class="btn primary">Save</button>
+          <button class="btn ghost" type="button" data-close>Cancel</button>
+        </div>
+      </form>
+    </dialog>
+  {{else}}
+    <div class="detail-empty muted">Select an item to see its note and activity.</div>
+  {{end}}
+  </section>
+</div>
+{{end}}

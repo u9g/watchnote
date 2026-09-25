@@ -1,0 +1,87 @@
+{{define "content"}}
+<div class="narrow">
+  <header class="appbar"><a href="/items">‹ Back</a><b>Settings</b><span></span></header>
+  <div class="page-body">
+    {{if .Saved}}<div class="ok">Saved.</div>{{end}}
+    {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+
+    <div class="field-label">Account</div>
+    <div class="card account">
+      {{template "avatar" .User}}
+      <div><b>{{.User.Email}}</b><div class="muted">Signed in with Google. Emails go here.</div></div>
+    </div>
+
+    <form class="stack" method="post" action="/settings">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <div class="field-label">Defaults for new items</div>
+      {{template "prefs" .}}
+
+      <div class="field-label">Timezone</div>
+      <div class="paste">
+        <input class="input" name="tz" value="{{if .User.TZ}}{{.User.TZ}}{{else}}UTC{{end}}" required>
+        <button type="button" class="btn" data-detect-tz>Use this device's</button>
+      </div>
+
+      <div class="field-label">Daily digest time</div>
+      <select class="input" name="digest_hour">
+        {{$h := .User.DigestHour}}{{range hours}}<option value="{{.}}"{{if eq . $h}} selected{{end}}>{{hourLabel .}}</option>{{end}}
+      </select>
+
+      <div class="field-label">Quiet hours</div>
+      <div class="card">
+        <label class="toggle-row"><span>Hold emails overnight, then send them in one batch</span>
+          <input type="checkbox" class="sw" name="quiet"{{if .User.QuietStart.Valid}} checked{{end}}></label>
+        <div class="row">
+          <input class="input" type="time" name="quiet_start" value="{{if .User.QuietStart.Valid}}{{minutes .User.QuietStart.Int64}}{{else}}22:00{{end}}">
+          <span class="muted">to</span>
+          <input class="input" type="time" name="quiet_end" value="{{if .User.QuietEnd.Valid}}{{minutes .User.QuietEnd.Int64}}{{else}}07:00{{end}}">
+        </div>
+      </div>
+      <button class="btn primary">Save settings</button>
+    </form>
+
+    <div class="field-label">Private repos</div>
+    <div class="card stack">
+      {{if .User.GitHubLogin}}
+        <div>Using a GitHub token for <b>@{{.User.GitHubLogin}}</b>.</div>
+        <form method="post" action="/settings/github/remove">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <button class="btn">Remove token</button>
+        </form>
+      {{else}}
+        <div>Public issues and PRs work without this. To watch items in private repos, paste a
+          <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>
+          with read-only <b>Issues</b>, <b>Pull requests</b> and <b>Metadata</b> access to those repos.</div>
+        <form class="paste" method="post" action="/settings/github">
+          <input type="hidden" name="csrf" value="{{.CSRF}}">
+          <input class="input" type="password" name="token" placeholder="github_pat_…" autocomplete="off" required>
+          <button class="btn">Save</button>
+        </form>
+      {{end}}
+    </div>
+
+    <div class="field-label">GitHub button</div>
+    <div class="card stack">
+      <div>Adds a <b>Watch with note</b> button to GitHub issue and PR pages. Needs
+        <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener">Tampermonkey</a>,
+        Violentmonkey or Greasemonkey.</div>
+      <ol class="small">
+        <li><a href="/watchnote.user.js">Install the userscript</a>.</li>
+        <li>Generate a token below. The first time you click the button on GitHub, paste it in.</li>
+      </ol>
+      {{if .APIToken}}
+        <div class="ok">Copy this token now. It won't be shown again.</div>
+        <input class="input mono" readonly value="{{.APIToken}}" data-select>
+      {{end}}
+      <form method="post" action="/settings/api-token"{{if .User.HasAPIToken}} data-confirm="This replaces your current token. The userscript will ask for the new one."{{end}}>
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <button class="btn">{{if .User.HasAPIToken}}Replace token{{else}}Generate token{{end}}</button>
+      </form>
+    </div>
+
+    <form method="post" action="/logout">
+      <button class="btn ghost danger-text">Sign out</button>
+    </form>
+  </div>
+</div>
+{{end}}

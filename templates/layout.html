@@ -1,0 +1,17 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{{.Title}}</title>
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-32.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body data-csrf="{{.CSRF}}"{{if .User}} data-tz="{{.User.TZ}}"{{end}}>
+{{template "content" .}}
+</body>
+</html>{{end}}
