@@ -112,3 +112,21 @@ func TestParseCodeRef(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+// A fine-grained token lists repos its user can push to that it can't read.
+func TestCodeRefScanSkipsUnreadableRepo(t *testing.T) {
+	h := newHarness(t)
+	sealed, _ := h.app.keys.Seal("github_pat_x")
+	h.app.db.SetGitHubToken(h.ctx(), h.user.ID, sealed, "me")
+	h.gh.repos = []map[string]any{
+		{"full_name": "me/private", "default_branch": "main", "pushed_at": "t1", "permissions": map[string]bool{"push": true}},
+	}
+	for range 2 {
+		if err := h.app.scanCode(h.ctx()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := h.gh.calls["/repos/me/private/git/ref/heads/main"]; n != 1 {
+		t.Errorf("unreadable repo scanned %d times before its next push", n)
+	}
+}
