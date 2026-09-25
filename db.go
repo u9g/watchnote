@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS items (
 	last_timeline   INTEGER NOT NULL DEFAULT 0,
 	next_poll_at    INTEGER NOT NULL DEFAULT 0,
 	last_error      TEXT NOT NULL DEFAULT '',
+	merge_sha       TEXT NOT NULL DEFAULT '',
+	release_etag    TEXT NOT NULL DEFAULT '',
+	released_in     TEXT NOT NULL DEFAULT '', -- tag of the first release seen containing merge_sha
 	UNIQUE (owner, repo, number)
 );
 
@@ -88,6 +91,13 @@ CREATE INDEX IF NOT EXISTS items_poll ON items(next_poll_at);
 CREATE INDEX IF NOT EXISTS watches_item ON watches(item_id);
 `
 
+// addedColumns brings databases created before a column existed up to schema.
+var addedColumns = []string{
+	`ALTER TABLE items ADD COLUMN merge_sha TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE items ADD COLUMN release_etag TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE items ADD COLUMN released_in TEXT NOT NULL DEFAULT ''`,
+}
+
 type DB struct{ *sql.DB }
 
 func openDB(path string) (*DB, error) {
@@ -104,6 +114,11 @@ func openDB(path string) (*DB, error) {
 	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
+	}
+	for _, q := range addedColumns {
+		if _, err := db.Exec(q); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return nil, fmt.Errorf("migrate: %w", err)
+		}
 	}
 	return &DB{db}, nil
 }
@@ -238,18 +253,23 @@ type Item struct {
 	LastTimeline int64
 	NextPollAt   int64
 	LastError    string
+	MergeSHA     string
+	ReleaseETag  string
+	ReleasedIn   string
 }
 
 func (it *Item) Ref() string { return fmt.Sprintf("%s/%s#%d", it.Owner, it.Repo, it.Number) }
 
 const itemCols = `id, owner, repo, number, kind, title, state, author, comments, html_url, private,
-	token_user_id, etag, timeline_page, gh_updated_at, last_activity, last_timeline, next_poll_at, last_error`
+	token_user_id, etag, timeline_page, gh_updated_at, last_activity, last_timeline, next_poll_at, last_error,
+	merge_sha, release_etag, released_in`
 
 func scanItem(row interface{ Scan(...any) error }) (*Item, error) {
 	it := &Item{}
 	err := row.Scan(&it.ID, &it.Owner, &it.Repo, &it.Number, &it.Kind, &it.Title, &it.State, &it.Author,
 		&it.Comments, &it.HTMLURL, &it.Private, &it.TokenUserID, &it.ETag, &it.TimelinePage,
-		&it.GHUpdatedAt, &it.LastActivity, &it.LastTimeline, &it.NextPollAt, &it.LastError)
+		&it.GHUpdatedAt, &it.LastActivity, &it.LastTimeline, &it.NextPollAt, &it.LastError,
+		&it.MergeSHA, &it.ReleaseETag, &it.ReleasedIn)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errNotFound
 	}
@@ -281,9 +301,11 @@ func (db *DB) InsertItem(ctx context.Context, it *Item) error {
 func (db *DB) SaveItem(ctx context.Context, it *Item) error {
 	_, err := db.ExecContext(ctx, `UPDATE items SET kind = ?, title = ?, state = ?, author = ?, comments = ?,
 		html_url = ?, private = ?, token_user_id = ?, etag = ?, timeline_page = ?, gh_updated_at = ?,
-		last_activity = ?, last_timeline = ?, next_poll_at = ?, last_error = ? WHERE id = ?`,
+		last_activity = ?, last_timeline = ?, next_poll_at = ?, last_error = ?, merge_sha = ?, release_etag = ?,
+		released_in = ? WHERE id = ?`,
 		it.Kind, it.Title, it.State, it.Author, it.Comments, it.HTMLURL, it.Private, it.TokenUserID, it.ETag,
-		it.TimelinePage, it.GHUpdatedAt, it.LastActivity, it.LastTimeline, it.NextPollAt, it.LastError, it.ID)
+		it.TimelinePage, it.GHUpdatedAt, it.LastActivity, it.LastTimeline, it.NextPollAt, it.LastError,
+		it.MergeSHA, it.ReleaseETag, it.ReleasedIn, it.ID)
 	return err
 }
 
@@ -427,7 +449,8 @@ func scanWatch(row interface{ Scan(...any) error }, withItem bool) (*Watch, erro
 		it := w.Item
 		dest = append(dest, &it.ID, &it.Owner, &it.Repo, &it.Number, &it.Kind, &it.Title, &it.State, &it.Author,
 			&it.Comments, &it.HTMLURL, &it.Private, &it.TokenUserID, &it.ETag, &it.TimelinePage,
-			&it.GHUpdatedAt, &it.LastActivity, &it.LastTimeline, &it.NextPollAt, &it.LastError)
+			&it.GHUpdatedAt, &it.LastActivity, &it.LastTimeline, &it.NextPollAt, &it.LastError,
+			&it.MergeSHA, &it.ReleaseETag, &it.ReleasedIn)
 	}
 	err := row.Scan(dest...)
 	if errors.Is(err, sql.ErrNoRows) {

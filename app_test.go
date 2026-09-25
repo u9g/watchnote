@@ -23,6 +23,8 @@ type fakeGitHub struct {
 	timeline []map[string]any
 	version  int
 	calls    map[string]int
+	release  string          // latest release tag, "" for none
+	inTag    map[string]bool // tags containing the merge commit
 }
 
 func (f *fakeGitHub) add(ev map[string]any) {
@@ -45,7 +47,7 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.ToLower(r.URL.Path) // GitHub is case-insensitive about owner/repo
 	f.calls[path]++
 	switch path {
-	case "/repos/octo/hello/issues/7":
+	case "/repos/octo/hello/issues/7", "/repos/octo/hello/pulls/7":
 		etag := fmt.Sprintf(`"v%d"`, f.version)
 		if r.Header.Get("If-None-Match") == etag {
 			w.WriteHeader(304)
@@ -68,6 +70,24 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Link", fmt.Sprintf(`<x?page=%d>; rel="next"`, page+1))
 		}
 		json.NewEncoder(w).Encode(f.timeline[lo:hi])
+	case "/repos/octo/hello/releases/latest":
+		etag := `"` + f.release + `"`
+		switch {
+		case f.release == "":
+			w.WriteHeader(404)
+		case r.Header.Get("If-None-Match") == etag:
+			w.WriteHeader(304)
+		default:
+			w.Header().Set("ETag", etag)
+			json.NewEncoder(w).Encode(map[string]string{"tag_name": f.release,
+				"html_url": "https://github.com/octo/hello/releases/tag/" + f.release, "published_at": "2026-09-25T10:00:00Z"})
+		}
+	case "/repos/octo/hello/compare/" + strings.ToLower(f.release) + "...abc123":
+		status := "ahead"
+		if f.inTag[f.release] {
+			status = "behind"
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": status})
 	case "/user":
 		json.NewEncoder(w).Encode(map[string]string{"login": "octocat"})
 	default:
@@ -199,6 +219,46 @@ func TestActivityEmailFlow(t *testing.T) {
 	}
 	if after := h.gh.calls["/repos/octo/hello/issues/7/timeline"]; after != before {
 		t.Errorf("timeline refetched on 304 (%d -> %d)", before, after)
+	}
+}
+
+func TestReleasedEmail(t *testing.T) {
+	h := newHarness(t)
+	h.gh.issue["pull_request"] = map[string]any{"merged_at": nil}
+	h.addWatch(filterStatusOnly)
+	h.tick(time.Hour)
+
+	h.gh.mu.Lock()
+	h.gh.issue["state"], h.gh.issue["merged_at"], h.gh.issue["merge_commit_sha"] = "closed", "2026-09-24T16:00:00Z", "abc123"
+	h.gh.release, h.gh.inTag = "v1.0", map[string]bool{"v1.1": true}
+	h.gh.version++
+	h.gh.mu.Unlock()
+	h.gh.add(simple("merged", 1, "carol"))
+	h.tick(time.Hour)
+	h.tick(2 * time.Minute)
+	if len(h.mail.Sent) != 1 || h.mail.Sent[0].Subject != "[octo/hello#7] ✅ Merged" {
+		t.Fatalf("want the merge email, got %d emails", len(h.mail.Sent))
+	}
+
+	h.gh.mu.Lock()
+	h.gh.release = "v1.1"
+	h.gh.mu.Unlock()
+	h.tick(time.Hour)
+	h.tick(2 * time.Minute)
+	if len(h.mail.Sent) != 2 {
+		t.Fatalf("want 2 emails, got %d", len(h.mail.Sent))
+	}
+	m := h.mail.Sent[1]
+	if want := "[octo/hello#7] Released in v1.1"; m.Subject != want {
+		t.Errorf("subject = %q, want %q", m.Subject, want)
+	}
+	if !strings.Contains(m.Text, "/e/done?w=") {
+		t.Errorf("release email doesn't offer Done:\n%s", m.Text)
+	}
+
+	h.tick(time.Hour)
+	if h.gh.calls["/repos/octo/hello/compare/v1.1...abc123"] != 1 || len(h.mail.Sent) != 2 {
+		t.Error("kept checking releases after the fix shipped")
 	}
 }
 
