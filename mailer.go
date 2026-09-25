@@ -276,7 +276,7 @@ type activityEmail struct {
 	Saved    string
 	Headline *Event
 	Others   []*Event
-	Resolved bool // merged or closed: ask if they're done
+	Resolved bool // merged, closed, released, or the note shows an image to check: ask if they're done
 	Links    emailLinks
 	BaseURL  string
 }
@@ -296,7 +296,7 @@ func (a *App) sendActivity(ctx context.Context, u *User, w *Watch, evs []*Event)
 	data := activityEmail{
 		Item: w.Item, Watch: w, Headline: h, Others: others,
 		Saved:    savedLabel(w, u, a.now()),
-		Resolved: h.Kind == "merged" || h.Kind == "closed" || h.Kind == "released",
+		Resolved: h.Kind == "merged" || h.Kind == "closed" || h.Kind == "released" || hasImage(w.Why()),
 		Links:    a.linksFor(w, link),
 		BaseURL:  a.cfg.BaseURL,
 	}

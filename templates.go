@@ -15,6 +15,7 @@ import (
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/renderer"
+	"github.com/yuin/goldmark/text"
 	"github.com/yuin/goldmark/util"
 )
 
@@ -49,6 +50,19 @@ func renderMarkdown(m goldmark.Markdown, s string) template.HTML {
 		return template.HTML(template.HTMLEscapeString(s))
 	}
 	return template.HTML(b.String())
+}
+
+// hasImage reports whether the Markdown s shows an image.
+func hasImage(s string) bool {
+	found := false
+	ast.Walk(md.Parser().Parse(text.NewReader([]byte(s))), func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if n.Kind() == ast.KindImage {
+			found = true
+			return ast.WalkStop, nil
+		}
+		return ast.WalkContinue, nil
+	})
+	return found
 }
 
 var funcs = map[string]any{

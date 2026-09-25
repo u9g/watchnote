@@ -1,12 +1,12 @@
 <!doctype html>
-<html><body style="margin:0;padding:0;background:#f4f1ec;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1d1d1f">
+<html><head><style>p{margin:4px 0}img{max-width:100%;height:auto}</style></head><body style="margin:0;padding:0;background:#f4f1ec;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1d1d1f">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
 <tr><td style="padding:0 4px 12px;font-size:18px;font-weight:700">Your Watchnote digest</td></tr>
 {{range .Entries}}
 <tr><td style="background:#fff;border-radius:12px;padding:18px 20px">
   <div style="background:#fff7d6;border:1px solid #f0d98a;border-radius:8px;padding:8px 10px;color:#5a4a12;font-size:13px;line-height:1.45">
-    <b>Why you saved this:</b> {{.Watch.Why}}
+    <b>Why you saved this:</b> {{markdown .Watch.Why}}
     <div style="font-size:11.5px;color:#8a7a3a;margin-top:3px">{{.Saved}}</div>
   </div>
   <p style="margin:14px 0 2px;font-size:15px;font-weight:700"><a href="{{.Item.HTMLURL}}" style="color:#1d1d1f;text-decoration:none">{{.Item.Title}}</a></p>

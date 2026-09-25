@@ -282,6 +282,30 @@ func TestReleasedEmail(t *testing.T) {
 	}
 }
 
+func TestNoteImageAsksDone(t *testing.T) {
+	h := newHarness(t)
+	w := h.addWatch(filterEverything)
+	img := "https://ci.example.com/shot.png"
+	if err := h.app.db.SetWatchNote(h.ctx(), w.ID, "Done when this looks right: ![shot]("+img+")"); err != nil {
+		t.Fatal(err)
+	}
+	h.tick(time.Hour)
+
+	h.gh.add(comment(1, "carol", "Tweaked the padding."))
+	h.tick(time.Hour)
+	h.tick(2 * time.Minute)
+	if len(h.mail.Sent) != 1 {
+		t.Fatalf("want 1 email, got %d", len(h.mail.Sent))
+	}
+	m := h.mail.Sent[0]
+	if !strings.Contains(m.HTML, `<img src="`+img+`"`) {
+		t.Errorf("HTML email doesn't show the note's image:\n%s", m.HTML)
+	}
+	if !strings.Contains(m.Text, "/e/done?w=") {
+		t.Errorf("email with a note image doesn't offer Done:\n%s", m.Text)
+	}
+}
+
 func TestFilterMuteDoneAndReopen(t *testing.T) {
 	h := newHarness(t)
 	w := h.addWatch(filterStatusOnly)

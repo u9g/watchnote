@@ -14,6 +14,9 @@ watching it.
   contains it, for fixes you're waiting to pick up from a release.
 - Merged/closed/released emails ask whether you're done. Done items stay quiet unless they're
   reopened. Nothing is archived automatically.
+- Put an image in a note (`![](https://…)`) to check whether you're done by looking: it's
+  loaded fresh each time the note or an email is opened, and every email about the item asks
+  whether you're done.
 - Every email has one-click links to mute, switch to status-only, or stop watching,
   plus a standard `List-Unsubscribe` header.
 - A userscript adds a **Watch with note** button to GitHub issue and PR pages.
