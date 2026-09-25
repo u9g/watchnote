@@ -14,6 +14,9 @@ watching it.
   contains it, for fixes you're waiting to pick up from a release.
 - Merged/closed/released emails ask whether you're done. Done items stay quiet unless they're
   reopened. Nothing is archived automatically.
+- Each watch has a **done badge**: paste its Markdown from the item page into a PR
+  description to see whether you're done without opening Watchnote. It's re-fetched on every
+  view, and clicking it opens the item (for you only) to change that.
 - Every email has one-click links to mute, switch to status-only, or stop watching,
   plus a standard `List-Unsubscribe` header.
 - A userscript adds a **Watch with note** button to GitHub issue and PR pages.
@@ -160,5 +163,7 @@ claude mcp add --transport http watchnote https://watchnote.example.com/mcp \
 | `update_note` | Replace a watch's note |
 | `set_status` | Mark a watch active, muted or done |
 | `stop_watching` | Stop watching and delete the note (refused while code comments reference it) |
+
+Every watch the tools return includes `done_badge`, the Markdown for its done badge.
 
 A token can only see and change its own user's watches.
