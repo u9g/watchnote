@@ -12,16 +12,24 @@ import (
 // token generated in Settings, since the userscript runs on github.com and
 // has no Watchnote cookie.
 
+// apiUser authenticates a request by its personal token (the userscript's and MCP's).
+func (a *App) apiUser(r *http.Request) (*User, error) {
+	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok || tok == "" {
+		return nil, errors.New("missing token; generate one in Watchnote settings")
+	}
+	u, err := a.db.UserByAPITokenHash(r.Context(), hashToken(tok))
+	if err != nil {
+		return nil, errors.New("invalid token; generate a new one in Watchnote settings")
+	}
+	return u, nil
+}
+
 func (a *App) withAPIUser(h userHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || tok == "" {
-			apiError(w, http.StatusUnauthorized, "missing token")
-			return
-		}
-		u, err := a.db.UserByAPITokenHash(r.Context(), hashToken(tok))
+		u, err := a.apiUser(r)
 		if err != nil {
-			apiError(w, http.StatusUnauthorized, "invalid token; generate a new one in Watchnote settings")
+			apiError(w, http.StatusUnauthorized, err.Error())
 			return
 		}
 		h(w, r, u)

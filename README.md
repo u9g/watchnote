@@ -125,3 +125,25 @@ Greasemonkey, and generate a token. On any GitHub issue or PR page, a **Watch wi
 note** button appears in the bottom-right corner. It asks for the token once, saves
 the watch through the JSON API, and then shows **✓ Watching** with a link to the item.
 Notes are edited in the web app.
+
+## MCP
+
+`/mcp` is an [MCP](https://modelcontextprotocol.io) server (Streamable HTTP), so an
+AI assistant can work with your watches. It takes the same personal token as the
+userscript, as a bearer token; generate one in Settings. In Claude Code:
+
+```sh
+claude mcp add --transport http watchnote https://watchnote.example.com/mcp \
+  --header "Authorization: Bearer wn_..."
+```
+
+| Tool | |
+|---|---|
+| `list_watches` | Your watches with their notes: active, done or muted, optionally searched |
+| `get_watch` | One watch with its recent activity |
+| `watch` | Start watching an issue or PR, with a note (everything or status-only) |
+| `update_note` | Replace a watch's note |
+| `set_status` | Mark a watch active, muted or done |
+| `stop_watching` | Stop watching and delete the note |
+
+A token can only see and change its own user's watches.
