@@ -358,12 +358,16 @@ func TestWebFlow(t *testing.T) {
 	if resp.StatusCode != 303 || resp.Header.Get("Location") != loc {
 		t.Fatalf("re-watch should redirect to %s, got %d %s", loc, resp.StatusCode, resp.Header.Get("Location"))
 	}
-	resp, _ = h.do("POST", loc+"/note", url.Values{"note": {"Blocks v3 now"}})
+	resp, _ = h.do("POST", loc+"/note", url.Values{"note": {"Blocks **v3** now <script>x</script>"}})
 	if resp.StatusCode != 303 {
 		t.Fatalf("edit note: %d", resp.StatusCode)
 	}
+	_, body = h.do("GET", loc, nil)
+	if !strings.Contains(body, "Blocks <strong>v3</strong> now") || strings.Contains(body, "<script>x") {
+		t.Fatalf("note not rendered as safe markdown:\n%s", body)
+	}
 	_, body = h.do("GET", "/items?q=v3", nil)
-	if !strings.Contains(body, "Blocks v3 now") {
+	if !strings.Contains(body, "Blocks **v3** now") {
 		t.Fatal("search by note failed")
 	}
 	// Missing CSRF is rejected.

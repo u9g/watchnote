@@ -62,8 +62,13 @@ a.card:hover { border-color: #cfd8ea; }
 .badge { font-size: 11px; font-weight: 700; color: #fff; padding: 2px 8px; border-radius: 10px; }
 .badge.open { background: var(--open); } .badge.merged { background: var(--merged); } .badge.closed { background: var(--closed); }
 .note { background: var(--note); border: 1px solid var(--note-line); border-radius: 8px; padding: 8px 10px; font-size: 14px; color: var(--note-ink); white-space: pre-wrap; overflow-wrap: anywhere; }
-.note::before { content: "Why I saved this: "; font-weight: 700; }
-.note.plain::before { content: ""; }
+.note::before { content: "Why I saved this:"; display: block; font-weight: 700; }
+.note.plain::before { content: none; }
+.note:not(.plain) { white-space: normal; }
+.note p, .note ul, .note ol, .note pre, .note blockquote { margin: 4px 0; }
+.note ul, .note ol { padding-left: 20px; }
+.note pre { overflow-x: auto; }
+.note blockquote { padding-left: 8px; border-left: 3px solid var(--note-line); }
 .card .note.plain { font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; }
 .account { flex-direction: row; align-items: center; gap: 12px; }

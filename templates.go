@@ -10,12 +10,26 @@ import (
 	"strings"
 	texttemplate "text/template"
 	"time"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
 )
 
 //go:embed templates static
 var assets embed.FS
 
+// Goldmark escapes raw HTML and drops unsafe link schemes by default, so its
+// output is safe to mark as template.HTML.
+var md = goldmark.New(goldmark.WithExtensions(extension.GFM))
+
 var funcs = map[string]any{
+	"markdown": func(s string) template.HTML {
+		var b bytes.Buffer
+		if err := md.Convert([]byte(s), &b); err != nil {
+			return template.HTML(template.HTMLEscapeString(s))
+		}
+		return template.HTML(b.String())
+	},
 	"ago": func(unix int64) string {
 		if unix == 0 {
 			return "never"
