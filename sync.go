@@ -159,8 +159,8 @@ func (a *App) scanUserCode(ctx context.Context, u *User) error {
 func (a *App) scanRepo(ctx context.Context, u *User, token, name string, r ghRepo, lastSHA string) error {
 	sha, err := a.gh.BranchSHA(ctx, token, name, r.DefaultBranch)
 	var se *ghStatusError
-	if errors.As(err, &se) && se.Code == 409 {
-		sha, err = "", nil // empty repo
+	if errors.As(err, &se) && (se.Code == 409 || se.Code == 403) {
+		sha, err = "", nil // empty repo, or one the token can't read
 	}
 	if err != nil {
 		return err

@@ -101,6 +101,9 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(f.repos)
 	case "/repos/me/app/git/ref/heads/main":
 		json.NewEncoder(w).Encode(map[string]any{"object": map[string]string{"sha": f.sha}})
+	case "/repos/me/private/git/ref/heads/main":
+		w.WriteHeader(403)
+		w.Write([]byte(`{"message":"Resource not accessible by personal access token"}`))
 	case "/repos/me/app/tarball/" + f.sha:
 		gz := gzip.NewWriter(w)
 		tw := tar.NewWriter(gz)
