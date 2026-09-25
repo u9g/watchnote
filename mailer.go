@@ -296,7 +296,7 @@ func (a *App) sendActivity(ctx context.Context, u *User, w *Watch, evs []*Event)
 	data := activityEmail{
 		Item: w.Item, Watch: w, Headline: h, Others: others,
 		Saved:    savedLabel(w, u, a.now()),
-		Resolved: h.Kind == "merged" || h.Kind == "closed",
+		Resolved: h.Kind == "merged" || h.Kind == "closed" || h.Kind == "released",
 		Links:    a.linksFor(w, link),
 		BaseURL:  a.cfg.BaseURL,
 	}

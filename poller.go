@@ -60,7 +60,11 @@ func (a *App) pollItem(ctx context.Context, it *Item) error {
 	if err != nil {
 		return fail(err, time.Hour)
 	}
-	snap, etag, notModified, err := a.gh.FetchItem(ctx, refOf(it), it.Kind, token, it.ETag)
+	etag := it.ETag
+	if it.State == "merged" && it.MergeSHA == "" {
+		etag = "" // merged before merge_sha was stored
+	}
+	snap, etag, notModified, err := a.gh.FetchItem(ctx, refOf(it), it.Kind, token, etag)
 	switch {
 	case errors.Is(err, errGHRateLimited):
 		return fail(err, 5*time.Minute)
@@ -83,12 +87,42 @@ func (a *App) pollItem(ctx context.Context, it *Item) error {
 			return fail(err, 10*time.Minute)
 		}
 	}
+	if it.State == "merged" && it.MergeSHA != "" && it.ReleasedIn == "" {
+		released, err := a.checkRelease(ctx, it, token, now)
+		if err != nil {
+			return fail(err, 10*time.Minute)
+		}
+		if released {
+			fresh++
+		}
+	}
 	if fresh > 0 {
 		it.LastActivity = now.Unix()
 	}
 	it.LastError = ""
 	it.NextPollAt = now.Add(pollInterval(it, now)).Unix()
 	return a.db.SaveItem(ctx, it)
+}
+
+// checkRelease records a "released" event once the repo's latest release
+// contains the PR's merge commit.
+func (a *App) checkRelease(ctx context.Context, it *Item, token string, now time.Time) (bool, error) {
+	rel, etag, notModified, err := a.gh.LatestRelease(ctx, refOf(it), token, it.ReleaseETag)
+	if err != nil || notModified || rel == nil {
+		return false, err
+	}
+	ok, err := a.gh.Contains(ctx, refOf(it), rel.TagName, it.MergeSHA, token)
+	if err != nil {
+		return false, err
+	}
+	it.ReleaseETag = etag
+	if !ok {
+		return false, nil
+	}
+	it.ReleasedIn = rel.TagName
+	e := Event{ItemID: it.ID, GHKey: "released:" + rel.TagName, Kind: "released", Category: "state",
+		Summary: "Released in " + rel.TagName, URL: rel.HTMLURL, OccurredAt: rel.PublishedAt.Unix(), IngestedAt: now.Unix()}
+	return a.db.InsertEvent(ctx, &e)
 }
 
 func applySnapshot(it *Item, s *Snapshot) {
@@ -101,6 +135,9 @@ func applySnapshot(it *Item, s *Snapshot) {
 		it.HTMLURL = s.HTMLURL
 	}
 	it.GHUpdatedAt = s.UpdatedAt.Unix()
+	if s.MergeSHA != "" {
+		it.MergeSHA = s.MergeSHA
+	}
 }
 
 // pollInterval backs off for quiet items. 304s are free against the rate

@@ -10,7 +10,9 @@ watching it.
   reviews, commits, labels/assignees, state changes and references.
 - Emails arrive within a couple of minutes, or as a daily digest. Bursts are batched,
   and quiet hours hold emails overnight.
-- Merged/closed emails ask whether you're done. Done items stay quiet unless they're
+- After a PR merges, you get one more email when the repo's latest GitHub release first
+  contains it, for fixes you're waiting to pick up from a release.
+- Merged/closed/released emails ask whether you're done. Done items stay quiet unless they're
   reopened. Nothing is archived automatically.
 - Every email has one-click links to mute, switch to status-only, or stop watching,
   plus a standard `List-Unsubscribe` header.

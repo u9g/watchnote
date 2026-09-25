@@ -148,7 +148,8 @@ type ghIssue struct {
 	User        ghUser    `json:"user"`
 	Comments    int       `json:"comments"`
 	UpdatedAt   time.Time `json:"updated_at"`
-	MergedAt    *string   `json:"merged_at"` // pulls endpoint
+	MergedAt    *string   `json:"merged_at"`        // pulls endpoint
+	MergeSHA    string    `json:"merge_commit_sha"` // pulls endpoint
 	PullRequest *struct {
 		MergedAt *string `json:"merged_at"`
 	} `json:"pull_request"` // issues endpoint, present for PRs
@@ -156,6 +157,7 @@ type ghIssue struct {
 
 type Snapshot struct {
 	Kind, Title, State, Author, HTMLURL string
+	MergeSHA                            string
 	Comments                            int
 	UpdatedAt                           time.Time
 }
@@ -178,6 +180,7 @@ func (g *GitHub) FetchItem(ctx context.Context, r Ref, kind, token, etag string)
 		s.Kind = "pr"
 		if is.MergedAt != nil || (is.PullRequest != nil && is.PullRequest.MergedAt != nil) {
 			s.State = "merged"
+			s.MergeSHA = is.MergeSHA
 		}
 	}
 	if kind == "" && s.Kind == "pr" {
@@ -193,6 +196,37 @@ func (g *GitHub) Timeline(ctx context.Context, r Ref, token string, page int) ([
 		url.PathEscape(r.Owner), url.PathEscape(r.Repo), r.Number, page)
 	_, next, _, err := g.get(ctx, path, token, "", &evs)
 	return evs, next, err
+}
+
+type ghRelease struct {
+	TagName     string    `json:"tag_name"`
+	HTMLURL     string    `json:"html_url"`
+	PublishedAt time.Time `json:"published_at"`
+}
+
+// LatestRelease returns the repo's latest release, or nil if it has none.
+func (g *GitHub) LatestRelease(ctx context.Context, r Ref, token, etag string) (*ghRelease, string, bool, error) {
+	var rel ghRelease
+	path := fmt.Sprintf("/repos/%s/%s/releases/latest", url.PathEscape(r.Owner), url.PathEscape(r.Repo))
+	newETag, _, notModified, err := g.get(ctx, path, token, etag, &rel)
+	if errors.Is(err, errGHNotFound) {
+		return nil, "", false, nil
+	}
+	if err != nil || notModified {
+		return nil, newETag, notModified, err
+	}
+	return &rel, newETag, false, nil
+}
+
+// Contains reports whether sha is reachable from ref.
+func (g *GitHub) Contains(ctx context.Context, r Ref, ref, sha, token string) (bool, error) {
+	var cmp struct {
+		Status string `json:"status"`
+	}
+	path := fmt.Sprintf("/repos/%s/%s/compare/%s...%s?per_page=1",
+		url.PathEscape(r.Owner), url.PathEscape(r.Repo), url.PathEscape(ref), url.PathEscape(sha))
+	_, _, _, err := g.get(ctx, path, token, "", &cmp)
+	return cmp.Status == "behind" || cmp.Status == "identical", err
 }
 
 func (g *GitHub) Viewer(ctx context.Context, token string) (string, error) {
