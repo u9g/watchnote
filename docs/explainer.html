@@ -561,8 +561,8 @@ function initAudio(ctx) {
   ac = ctx || new AC();
   master = ac.createGain(); master.gain.value = muted ? 0 : .9;
   const comp = ac.createDynamicsCompressor(); master.connect(comp); comp.connect(ac.destination);
-  sfx = ac.createGain(); sfx.gain.value = 1; sfx.connect(master);
-  music = ac.createGain(); music.gain.value = .5; music.connect(master);
+  sfx = ac.createGain(); sfx.gain.value = 1.6; sfx.connect(master);
+  music = ac.createGain(); music.gain.value = .6; music.connect(master);
   noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
   const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
 }
@@ -587,8 +587,8 @@ function noise(dur, o = {}) {
 const SND = {
   whoosh: () => noise(.7, { gain: .22, freq: 250, to: 3200, q: .7, attack: .25 }),
   whooshDown: () => noise(.6, { gain: .18, freq: 3000, to: 300, q: .7, attack: .15 }),
-  logo: () => { [261.63, 329.63, 392, 493.88, 587.33].forEach((f, i) => { tone(f, 2.6, { gain: .07, attack: .04 + i * .05, when: i * .07 }); tone(f * 2, 1.2, { gain: .015, when: i * .07 }); }); tone(130.8, 2.4, { type: 'triangle', gain: .09, attack: .05 }); },
-  key: () => { noise(.035, { gain: .22, type: 'highpass', freq: 2500 + Math.random() * 2500, q: .5, attack: .001 }); tone(140 + Math.random() * 60, .04, { type: 'square', gain: .018, attack: .001 }); },
+  logo: () => { [261.63, 329.63, 392, 493.88, 587.33].forEach((f, i) => { tone(f, 2.6, { gain: .07, attack: .04 + i * .05, when: i * .07 }); tone(f * 2, 1.2, { gain: .015, when: i * .07 }); }); tone(261.63, 2.4, { type: 'triangle', gain: .06, attack: .05 }); },
+  key: () => { noise(.035, { gain: .22, type: 'highpass', freq: 2500 + Math.random() * 2500, q: .5, attack: .001 }); tone(900 + Math.random() * 300, .03, { type: 'square', gain: .02, attack: .001 }); },
   hmm: () => { tone(392, .22, { type: 'triangle', gain: .12 }); tone(466, .35, { type: 'triangle', gain: .12, when: .16 }); },
   sad: () => { tone(415.3, .3, { type: 'triangle', gain: .13 }); tone(349.2, .55, { type: 'triangle', gain: .13, when: .22, slide: 330 }); },
   blip: () => { tone(988, .14, { gain: .12 }); tone(1480, .16, { gain: .07, when: .07 }); },
@@ -601,20 +601,20 @@ const SND = {
   del: () => { noise(.4, { gain: .2, freq: 2500, to: 200, q: 1.2 }); tone(700, .35, { type: 'sawtooth', gain: .04, slide: 110 }); },
   push: () => { tone(523.25, .1, { type: 'square', gain: .04 }); tone(784, .18, { type: 'square', gain: .04, when: .09 }); },
   off: () => { tone(659.3, .2, { gain: .1 }); tone(493.9, .45, { gain: .1, when: .14 }); },
-  thump: () => { tone(90, .35, { gain: .25, slide: 45, attack: .003 }); },
+  thump: () => { tone(330, .3, { type: 'triangle', gain: .18, slide: 165, attack: .003 }); },
 };
 // music: a soft pad and a plucked arpeggio, 2 seconds per chord
 const CHORDS = [[261.63, 329.63, 392, 493.88], [220, 261.63, 329.63, 392], [174.61, 220, 261.63, 329.63], [196, 246.94, 293.66, 392]];
 function musicChord(i, level) {
   const ch = CHORDS[i % 4];
   const t0 = now();
-  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.connect(music);
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400; lp.connect(music);
   ch.forEach(f => {
     const o = ac.createOscillator(), g = ac.createGain(); o.type = 'triangle'; o.frequency.value = f; o.detune.value = (Math.random() - .5) * 8;
     g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(.035 * level, t0 + .5); g.gain.linearRampToValueAtTime(.025 * level, t0 + 1.6); g.gain.linearRampToValueAtTime(0, t0 + 2.3);
     o.connect(g); g.connect(lp); o.start(t0); o.stop(t0 + 2.4);
   });
-  tone(ch[0] / 2, 2.1, { type: 'sine', gain: .09 * level, attack: .08, dest: music });
+  tone(ch[0], 2.1, { type: 'triangle', gain: .05 * level, attack: .08, dest: music });
 }
 function musicArp(i, level) {
   const ch = CHORDS[Math.floor(i / 4) % 4]; const f = ch[[0, 2, 1, 3][i % 4]] * 2;
