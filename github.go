@@ -267,6 +267,18 @@ func (g *GitHub) UserRepos(ctx context.Context, token string) ([]ghRepo, error) 
 	return out, nil
 }
 
+// CanSee reports whether token covers repo at all, as opposed to covering it
+// without some permission.
+func (g *GitHub) CanSee(ctx context.Context, token, repo string) (bool, error) {
+	var r ghRepo
+	_, _, _, err := g.get(ctx, "/repos/"+repo, token, "", &r)
+	var se *ghStatusError
+	if errors.Is(err, errGHNotFound) || errors.As(err, &se) && se.Code == 403 {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func (g *GitHub) BranchSHA(ctx context.Context, token, repo, branch string) (string, error) {
 	var ref struct {
 		Object struct {

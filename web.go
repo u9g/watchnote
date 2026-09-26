@@ -41,8 +41,7 @@ type pageData struct {
 	// settings
 	APIToken     string
 	Saved        bool
-	GitHubTokens []*GitHubToken
-	CodeRepos    map[string]CodeRepo // scanned repos by lowercase owner/name
+	GitHubTokens []*tokenCard
 
 	// email actions
 	Action      string
@@ -592,12 +591,76 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request, u *User) {
 
 func (a *App) settingsPage(ctx context.Context, u *User) (*pageData, error) {
 	d := a.page(u, "Settings · Watchnote")
-	var err error
-	if d.GitHubTokens, err = a.db.GitHubTokens(ctx, u.ID); err != nil {
+	tokens, err := a.db.GitHubTokens(ctx, u.ID)
+	if err != nil {
 		return nil, err
 	}
-	d.CodeRepos, err = a.db.CodeRepos(ctx, u.ID)
-	return d, err
+	scanned, err := a.db.CodeRepos(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range tokens {
+		d.GitHubTokens = append(d.GitHubTokens, newTokenCard(t, scanned))
+	}
+	return d, nil
+}
+
+// tokenCard is a token as Settings shows it: the repos it scans, and apart
+// from them those it lists but GitHub won't let it read.
+type tokenCard struct {
+	*GitHubToken
+	Scans      []repoRow
+	NoContents []repoRow // repos it covers but hasn't the Contents permission for
+	NoAccess   []repoRow // repos it lists but doesn't cover
+	Others     int       // repos it lists but doesn't scan: read-only ones, and forks
+}
+
+type repoRow struct {
+	TokenRepo
+	Status string
+}
+
+func newTokenCard(t *GitHubToken, scanned map[string]CodeRepo) *tokenCard {
+	c := &tokenCard{GitHubToken: t}
+	for _, r := range t.Repos {
+		if !r.Scan {
+			c.Others++
+			continue
+		}
+		s := scanned[r.Key()]
+		switch {
+		case s.Refusals[t.ID].Why == refusedContents:
+			c.NoContents = append(c.NoContents, repoRow{r, "needs Contents permission"})
+		case s.Refusals[t.ID].Why == refusedAccess:
+			c.NoAccess = append(c.NoAccess, repoRow{r, "not covered by this token"})
+		case s.TokenID == t.ID:
+			c.Scans = append(c.Scans, repoRow{r, "scanned"})
+		case s.TokenID != 0:
+			c.Scans = append(c.Scans, repoRow{r, "scanned with another token"})
+		default:
+			c.Scans = append(c.Scans, repoRow{r, "not scanned yet"})
+		}
+	}
+	return c
+}
+
+// Owners names the accounts and organizations whose repos the token scans.
+func (c *tokenCard) Owners() []string { return ownersOf(c.Scans) }
+
+// NoAccessOwners names those whose repos it lists but doesn't cover.
+func (c *tokenCard) NoAccessOwners() []string { return ownersOf(c.NoAccess) }
+
+func ownersOf(rows []repoRow) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, r := range rows {
+		owner, _, _ := strings.Cut(r.Name, "/")
+		if !seen[strings.ToLower(owner)] {
+			seen[strings.ToLower(owner)] = true
+			out = append(out, owner)
+		}
+	}
+	return out
 }
 
 func parseClock(s string) (sql.NullInt64, bool) {
@@ -682,11 +745,13 @@ func (a *App) handleGitHubToken(w http.ResponseWriter, r *http.Request, u *User)
 		a.serverError(w, err)
 		return
 	}
-	// List its repos now so the page can show them. A failure is saved on the
-	// token and shown there, and the scanner tries again.
+	// List its repos now so the page can show them, and scan them soon so it
+	// shows what the token can read. A listing failure is saved on the token
+	// and shown there, and the scanner tries again.
 	if _, _, err := a.listTokenRepos(ctx, t); err != nil {
 		a.log.Warn("listing a new token's repos failed", "user", u.ID, "err", err)
 	}
+	a.scanSoon(u)
 	http.Redirect(w, r, fmt.Sprintf("/settings?saved=1#github-token-%d", t.ID), http.StatusSeeOther)
 }
 
@@ -700,9 +765,12 @@ func (a *App) handleGitHubRefresh(w http.ResponseWriter, r *http.Request, u *Use
 		a.serverError(w, err)
 		return
 	}
-	if _, _, err := a.listTokenRepos(r.Context(), t); err != nil {
-		a.log.Warn("listing a token's repos failed", "user", u.ID, "token", t.ID, "err", err)
+	// Its permissions may have changed, so ask GitHub again for what it refused.
+	if err := a.db.ForgetRefusals(r.Context(), u.ID, t.ID); err != nil {
+		a.serverError(w, err)
+		return
 	}
+	a.scanSoon(u)
 	http.Redirect(w, r, fmt.Sprintf("/settings#github-token-%d", t.ID), http.StatusSeeOther)
 }
 

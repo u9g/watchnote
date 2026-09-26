@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	_ "time/tzdata" // users pick IANA timezones; don't depend on the image having them
@@ -102,6 +103,9 @@ type App struct {
 	pages map[string]*pageTemplate
 	now   func() time.Time
 	log   *slog.Logger
+
+	scanMu sync.Mutex     // one code scan at a time
+	bg     sync.WaitGroup // scans started by requests
 }
 
 func newApp(cfg Config, db *DB, mail Sender) (*App, error) {
