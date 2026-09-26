@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"strconv"
 	"strings"
@@ -114,9 +113,4 @@ func randomToken(nbytes int) string {
 		panic(err)
 	}
 	return base64.RawURLEncoding.EncodeToString(b)
-}
-
-func hashToken(t string) string {
-	s := sha256.Sum256([]byte(t))
-	return hex.EncodeToString(s[:])
 }

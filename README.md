@@ -2,18 +2,34 @@
 
 A hosted instance is available at [watchnote.u9g.dev](https://watchnote.u9g.dev).
 
-Watch GitHub issues and pull requests, and get an email whenever something
-happens to them. Each email starts with the note you saved about **why** you're
-watching it.
+When code exists because of a GitHub issue or pull request, say so in a comment:
 
-![Watched items, with the note for the selected one and its activity](docs/items.png)
+```go
+// octo/hello#7: Retry until shutdown stops racing; delete once this is fixed.
+for !shutdown() { time.Sleep(time.Second) }
+```
 
-![Settings: default notifications, delivery and timezone](docs/settings.png)
+Watchnote finds comments like this in your repos and emails you whenever something
+happens to the issue or PR they reference. Each email starts with the comment, linked to
+its line, so you know **why** you care. Delete the comment and the item stops being
+watched. Comments are the only way to watch anything: there are no notes to type in, and
+nothing to add or remove by hand.
+
+![Watched items, with the comments for the selected one and its activity](docs/items.png)
+
+![Settings: default notifications, delivery, timezone and GitHub tokens](docs/settings.png)
 
 - Sign in with Google. Emails go to that address.
-- Paste an issue or PR link (or share it from your phone), write a note, and pick
-  what to hear about: everything, status changes only, or a custom mix of comments,
-  reviews, commits, labels/assignees, state changes and references.
+- Save a read-only fine-grained GitHub token in Settings for each account or
+  organization whose code should be read. Settings lists the repos each one scans.
+- Any comment works (`//`, `#`, `--`, `;`, `%`, `/* */`, `<!-- -->` and so on), as does
+  a line of its own inside a docstring, or an added line in a `.patch` file: what counts is
+  a line that starts with `owner/repo#N: ` once any leading punctuation is set aside.
+  [Every comment style that works](https://watchnote.u9g.dev/docs/code-comments) is listed
+  at `/docs/code-comments`, no sign-in needed.
+- Pick what to hear about for each item: everything, status changes only, or a custom mix
+  of comments, reviews, commits, labels/assignees, state changes and references. Newly
+  referenced items start with your defaults from Settings.
 - Emails arrive within a couple of minutes, or as a daily digest. Bursts are batched,
   and quiet hours hold emails overnight.
 - After a PR merges, you get one more email when the repo's latest GitHub release first
@@ -23,14 +39,8 @@ watching it.
 - Each watch has a **done badge**: paste its Markdown from the item page into a PR
   description to see whether you're done without opening Watchnote. It's re-fetched on every
   view, and clicking it opens the item (for you only) to change that.
-- Every email has one-click links to mute, switch to status-only, or stop watching,
-  plus a standard `List-Unsubscribe` header.
-- A userscript adds a **Watch with note** button to GitHub issue and PR pages.
-- A code comment like `// owner/repo#123: why` keeps that item watched until the
-  comment is deleted from your repo. [Every comment style that works](https://watchnote.u9g.dev/docs/code-comments)
-  is listed at `/docs/code-comments`, no sign-in needed.
-- Private repos work if you save read-only fine-grained GitHub tokens in Settings, one
-  per account or organization.
+- Every email has one-click links to mute or switch to status-only, plus a standard
+  `List-Unsubscribe` header, which mutes. Only deleting the comment stops a watch.
 
 It's a single Go binary with server-rendered HTML and SQLite. It works on phones
 and desktops and installs as a PWA.
@@ -52,6 +62,13 @@ GitHub only allows webhooks on repos you administer, so Watchnote **polls**:
    filter, waits 60s for bursts to settle (5 minutes at most), respects quiet hours,
    and sends one email.
 
+Separately, every 5 minutes, the repos each GitHub token can see are listed. Those the
+user can push to, forks aside, are read again when their `pushed_at` has moved: the
+default branch's tarball is scanned for reference comments, each referenced item is
+watched, and watches whose last comment is gone stop. When a token can't read a repo's
+code, Settings says whether the token lacks the **Contents** permission or doesn't cover
+the repo, and the next token that lists it is tried.
+
 An issue closed by a PR shows up on the issue's own timeline, so watching the issue
 is enough.
 
@@ -67,8 +84,9 @@ You'll need:
    The only scopes used are `openid email profile`.
 2. **SMTP**: any provider works (Postmark, SES, Resend, Mailgun…). Port 587 uses
    STARTTLS; port 465 uses implicit TLS. Set up SPF/DKIM for the `MAIL_FROM` domain.
-3. **GitHub token** (recommended): any token works for public repos, even one with no
-   scopes. Without one, GitHub allows only 60 requests/hour.
+3. **GitHub token** (recommended): polls public issues and PRs. Any token works, even one
+   with no scopes. Without one, GitHub allows only 60 requests/hour. Users' own tokens,
+   saved in Settings, read their code and private items.
 
 ```sh
 helm install watchnote oci://ghcr.io/u9g/charts/watchnote \
@@ -129,53 +147,6 @@ DEV_LOGIN=true MAIL_MODE=log SECRET_KEY=$(openssl rand -hex 32) \
 go test ./...
 ```
 
-`go test` runs end-to-end against a fake GitHub API. It covers polling, batching,
-filters, mute/done/reopen, quiet hours, digests, signed email links, the web UI
-and the userscript API.
-
-## The GitHub userscript
-
-In Settings, install `/watchnote.user.js` with Tampermonkey, Violentmonkey or
-Greasemonkey, and generate a token. On any GitHub issue or PR page, a **Watch with
-note** button appears in the bottom-right corner. It asks for the token once, saves
-the watch through the JSON API, and then shows **✓ Watching** with a link to the item.
-Notes are edited in the web app.
-
-## Watching from code comments
-
-When code exists because of an issue or PR, say so in a comment on its own line above
-it, like `// octo/hello#7: Retry until shutdown stops racing; delete once this is fixed.`
-Any comment works (`//`, `//!`, `#`, `--`, `;`, `%`, `/* */`, `<!-- -->` and so on), as
-does a line of its own inside a docstring: what counts is a line that starts with
-`owner/repo#N: ` once any leading punctuation is set aside. With GitHub tokens saved in
-Settings, Watchnote reads the default branch of every repo they can see and you can push
-to (forks aside), again after each push, and watches every item referenced this way.
-A fine-grained token covers one account or organization, so add one per owner;
-Settings lists the repos each token scans. The
-comment, linked to its line, is shown as the note. When a comment is deleted, its
-reference goes too, and a watch left with no references and no note of its own
-stops. For private repos, the token needs read-only **Contents** access.
-
-## MCP
-
-`/mcp` is an [MCP](https://modelcontextprotocol.io) server (Streamable HTTP), so an
-AI assistant can work with your watches. It takes the same personal token as the
-userscript, as a bearer token; generate one in Settings. In Claude Code:
-
-```sh
-claude mcp add --transport http watchnote https://watchnote.example.com/mcp \
-  --header "Authorization: Bearer wn_..."
-```
-
-| Tool | |
-|---|---|
-| `list_watches` | Your watches with their notes: active, done or muted, optionally searched |
-| `get_watch` | One watch with its recent activity |
-| `watch` | Start watching an issue or PR, with a note (everything or status-only) |
-| `update_note` | Replace a watch's note |
-| `set_status` | Mark a watch active, muted or done |
-| `stop_watching` | Stop watching and delete the note (refused while code comments reference it) |
-
-Every watch the tools return includes `done_badge`, the Markdown for its done badge.
-
-A token can only see and change its own user's watches.
+`go test` runs end-to-end against a fake GitHub API. It covers code scanning,
+polling, batching, filters, mute/done/reopen, quiet hours, digests, signed email links
+and the web UI.

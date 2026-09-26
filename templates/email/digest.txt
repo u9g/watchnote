@@ -1,16 +1,17 @@
 Your Watchnote digest
 {{range .Entries}}
 ==========================================
-WHY YOU SAVED THIS: {{.Watch.Why}}
-({{.Saved}})
+WHY YOUR CODE WATCHES THIS:
+{{.Watch.Why}}
+({{.Since}})
 
 {{.Item.Title}}
 {{.Item.Ref}} · {{stateLabel .Item}}
 {{range .Events}}- {{.Summary}}
 {{end}}
 {{.Item.HTMLURL}}
-Edit note: {{.Links.EditNote}}
+Open in Watchnote: {{.Links.Watch}}
 Mark done: {{.Links.Done}}
-Stop watching: {{.Links.Stop}}
+Mute: {{.Links.Mute}}
 {{end}}
 Settings: {{.BaseURL}}/settings

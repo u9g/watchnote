@@ -10,14 +10,10 @@
     <header class="appbar mobile-only">{{template "logo"}}<a href="/settings" aria-label="Settings">{{template "avatar" .User}}</a></header>
     <div class="tabs mobile-only">{{template "tabs" .}}</div>
     <div class="list-body">
-      <form class="paste" method="get" action="/items/new">
-        <input class="input" name="url" placeholder="Paste a GitHub issue or PR link…" autocomplete="off" inputmode="url">
-        <button class="btn primary">Watch</button>
-      </form>
       {{if or .Watches .Q}}
       <form class="search" method="get" action="/items">
         <input type="hidden" name="tab" value="{{.Tab}}">
-        <input class="input" type="search" name="q" value="{{.Q}}" placeholder="🔍 Search titles &amp; notes">
+        <input class="input" type="search" name="q" value="{{.Q}}" placeholder="🔍 Search titles &amp; comments">
       </form>
       {{end}}
       {{range .Watches}}
@@ -33,15 +29,21 @@
         <div class="empty">
           <div class="emoji">🔖</div>
           <div class="title">Nothing watched yet</div>
-          <div class="muted">Paste any GitHub issue or PR link above to start.</div>
-          <div class="muted small">Tip: install Watchnote to your home screen, then share GitHub links to it. On desktop, add the GitHub button from Settings.</div>
+          <div class="muted">Watchnote watches the issues and PRs your code's comments reference, like</div>
+          <code class="mono">// owner/repo#123: Remove this retry once the fix ships.</code>
+          {{if .User.HasGitHubToken}}
+          <div class="muted small">Commit one to the default branch of a repo your GitHub tokens scan, and it shows up
+            here within a few minutes of the push. <a href="/docs/code-comments">Every comment style that works</a></div>
+          {{else}}
+          <div class="muted small">First, <a href="/settings#github-tokens">add a GitHub token in Settings</a> so Watchnote
+            can read your repos. <a href="/docs/code-comments">Every comment style that works</a></div>
+          {{end}}
         </div>
         {{else}}
         <div class="empty"><div class="muted">Nothing here.</div></div>
         {{end}}
       {{end}}
     </div>
-    <a class="fab mobile-only" href="/items/new" aria-label="Watch something">+</a>
   </main>
 
   <section class="detail">
@@ -51,7 +53,11 @@
       <div class="meta">{{template "badge" .Item}} {{.Item.Owner}}/{{.Item.Repo}} #{{.Item.Number}}{{if eq .Status "muted"}} · muted{{else if eq .Status "done"}} · done{{end}}</div>
       <h2><a href="{{.Item.HTMLURL}}" target="_blank" rel="noopener">{{.Item.Title}}</a></h2>
       <div class="meta">by {{.Item.Author}} · {{.Item.Comments}} comments · updated {{ago .Item.GHUpdatedAt}}</div>
-      <div class="note">{{markdown .Why}}<button type="button" class="link" data-open="edit-note">Edit</button></div>
+      <div class="note">{{range .Refs}}
+        <div class="ref">{{markdown .Note}}<a class="small" href="{{.URL}}" target="_blank" rel="noopener">{{.Repo}}/{{.Path}}:{{.Line}}</a></div>
+      {{end}}</div>
+      <div class="muted small">Watched for as long as {{plural (len .Refs) "this comment is" "these comments are"}} on the
+        default branch. To stop watching, delete {{plural (len .Refs) "it" "them"}}.</div>
       {{if .Item.LastError}}<div class="warn">Last check failed: {{.Item.LastError}}</div>{{end}}
 
       <div class="field-label">Activity</div>
@@ -62,7 +68,7 @@
           {{if .Body}}<div class="excerpt">{{.Body}}</div>{{end}}
         </div>
         {{end}}
-        <div class="muted start">You started watching · {{ago .CreatedAt}}</div>
+        <div class="muted start">Watched since · {{ago .CreatedAt}}</div>
       </div>
 
       <div class="field-label">Done badge</div>
@@ -90,27 +96,10 @@
           {{if eq .Status "done"}}<button class="btn" name="status" value="active">Move to Active</button>
           {{else}}<button class="btn" name="status" value="done">Mark done</button>{{end}}
         </form>
-        <form method="post" action="/items/{{.ID}}/delete" data-confirm="Stop watching this and delete your note?">
-          <input type="hidden" name="csrf" value="{{$.CSRF}}">
-          <button class="btn danger">Stop watching</button>
-        </form>
       </div>
     </div>
-
-    <dialog id="edit-note" class="sheet">
-      <form method="post" action="/items/{{.ID}}/note">
-        <input type="hidden" name="csrf" value="{{$.CSRF}}">
-        <b>Why are you watching this?</b>
-        <textarea class="input" name="note" rows="5" maxlength="2000" required>{{.Note}}</textarea>
-        <div class="muted small">Future emails will use the updated note.</div>
-        <div class="row">
-          <button class="btn primary">Save</button>
-          <button class="btn ghost" type="button" data-close>Cancel</button>
-        </div>
-      </form>
-    </dialog>
   {{else}}
-    <div class="detail-empty muted">Select an item to see its note and activity.</div>
+    <div class="detail-empty muted">Select an item to see its comments and activity.</div>
   {{end}}
   </section>
 </div>
