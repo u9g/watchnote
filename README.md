@@ -2,6 +2,9 @@
 
 A hosted instance is available at [watchnote.u9g.dev](https://watchnote.u9g.dev).
 
+New here? Watch the [70-second explainer](https://claude.ai/artifact/D9PFixkmJYaPx74xWX2Zbw) (with sound;
+source in [`docs/explainer.html`](docs/explainer.html)).
+
 When code exists because of a GitHub issue or pull request, say so in a comment:
 
 ```go
