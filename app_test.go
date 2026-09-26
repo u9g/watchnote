@@ -30,11 +30,12 @@ type fakeGitHub struct {
 
 	// Repos for /user/repos, by token where reposFor has it; me/app's default
 	// branch is at sha with files code. Listing fails for tokens in down.
-	repos    []map[string]any
-	reposFor map[string][]map[string]any
-	down     map[string]bool
-	sha      string
-	code     map[string]string
+	repos        []map[string]any
+	reposFor     map[string][]map[string]any
+	down         map[string]bool
+	readsPrivate string // the one token me/private's code is readable with
+	sha          string
+	code         map[string]string
 }
 
 func (f *fakeGitHub) add(ev map[string]any) {
@@ -112,9 +113,13 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/repos/me/app/git/ref/heads/main":
 		json.NewEncoder(w).Encode(map[string]any{"object": map[string]string{"sha": f.sha}})
 	case "/repos/me/private/git/ref/heads/main":
-		w.WriteHeader(403)
-		w.Write([]byte(`{"message":"Resource not accessible by personal access token"}`))
-	case "/repos/me/app/tarball/" + f.sha:
+		if tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "); tok != f.readsPrivate {
+			w.WriteHeader(403)
+			w.Write([]byte(`{"message":"Resource not accessible by personal access token"}`))
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"object": map[string]string{"sha": f.sha}})
+	case "/repos/me/app/tarball/" + f.sha, "/repos/me/private/tarball/" + f.sha:
 		gz := gzip.NewWriter(w)
 		tw := tar.NewWriter(gz)
 		for name, body := range f.code {

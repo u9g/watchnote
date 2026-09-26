@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -143,9 +144,9 @@ func (a *App) scanUserCode(ctx context.Context, u *User) error {
 	if err != nil {
 		return err
 	}
-	listed := map[string]bool{}  // repos to keep refs from
-	covered := map[string]bool{} // repos an earlier token scans
-	scans := 0
+	listed := map[string]bool{} // repos to keep refs from
+	var order []string
+	found := map[string]*listedRepo{}
 	for _, t := range tokens {
 		token, repos, err := a.listTokenRepos(ctx, t)
 		if err != nil {
@@ -159,17 +160,29 @@ func (a *App) scanUserCode(ctx context.Context, u *User) error {
 		}
 		for _, r := range repos {
 			name := strings.ToLower(r.FullName)
-			if !r.scannable() || covered[name] {
+			if !r.scannable() {
 				continue
 			}
-			listed[name], covered[name] = true, true
-			if scanned[name].PushedAt == r.PushedAt || scans == maxScansPerCycle {
-				continue
+			listed[name] = true
+			if found[name] == nil {
+				found[name] = &listedRepo{repo: r}
+				order = append(order, name)
 			}
-			scans++
-			if err := a.scanRepo(ctx, u, token, name, r, scanned[name].SHA); err != nil {
-				a.log.Error("repo scan failed", "user", u.ID, "repo", name, "err", err)
-			}
+			found[name].tokens = append(found[name].tokens, repoToken{t.ID, token})
+		}
+	}
+	scans := 0
+	for _, name := range order {
+		lr, prev := found[name], scanned[name]
+		if prev.PushedAt == lr.repo.PushedAt && !lr.untried(prev) {
+			continue
+		}
+		if scans == maxScansPerCycle {
+			break
+		}
+		scans++
+		if err := a.scanRepo(ctx, u, name, lr, prev); err != nil {
+			a.log.Error("repo scan failed", "user", u.ID, "repo", name, "err", err)
 		}
 	}
 	for name := range scanned {
@@ -186,39 +199,83 @@ func (a *App) scanUserCode(ctx context.Context, u *User) error {
 	return nil
 }
 
-func (a *App) scanRepo(ctx context.Context, u *User, token, name string, r ghRepo, lastSHA string) error {
-	sha, err := a.gh.BranchSHA(ctx, token, name, r.DefaultBranch)
-	var se *ghStatusError
-	if errors.As(err, &se) && (se.Code == 409 || se.Code == 403) {
-		sha, err = "", nil // empty repo, or one the token can't read
+// listedRepo is a repo to scan and the tokens that list it, in the order
+// they're tried. A fine-grained token lists every repo its user can push to
+// but reads only its own owner's private ones, so the first may be refused.
+type listedRepo struct {
+	repo   ghRepo
+	tokens []repoToken
+}
+
+type repoToken struct {
+	id    int64
+	token string
+}
+
+// untried reports whether the repo was last left unread and a token that
+// lists it hasn't been refused yet, like one added since.
+func (lr *listedRepo) untried(prev CodeRepo) bool {
+	if prev.TokenID != 0 || prev.SHA != "" {
+		return false
 	}
-	if err != nil {
-		return err
+	for _, t := range lr.tokens {
+		if !slices.Contains(prev.UnreadableBy, t.id) {
+			return true
+		}
 	}
-	if sha != "" && sha != lastSHA {
-		body, err := a.gh.Tarball(ctx, token, name, sha)
+	return false
+}
+
+func (a *App) scanRepo(ctx context.Context, u *User, name string, lr *listedRepo, prev CodeRepo) error {
+	saved := CodeRepo{PushedAt: lr.repo.PushedAt}
+	if prev.PushedAt == lr.repo.PushedAt {
+		saved.UnreadableBy = prev.UnreadableBy
+	}
+	for _, t := range lr.tokens {
+		if slices.Contains(saved.UnreadableBy, t.id) {
+			continue
+		}
+		sha, err := a.gh.BranchSHA(ctx, t.token, name, lr.repo.DefaultBranch)
+		var se *ghStatusError
+		if errors.As(err, &se) && se.Code == 403 {
+			saved.UnreadableBy = append(saved.UnreadableBy, t.id)
+			continue
+		}
+		if errors.As(err, &se) && se.Code == 409 {
+			sha, err = "", nil // empty repo
+		}
 		if err != nil {
 			return err
 		}
-		refs, err := scanTarball(body, name, sha)
-		body.Close()
-		if err != nil {
-			return err
-		}
-		failed, err := a.SyncCodeRefs(ctx, u, name, refs)
-		if err != nil {
-			return err
-		}
-		for _, e := range failed {
-			a.log.Warn("code ref not watched", "user", u.ID, "repo", name, "err", e)
-			// Refs to items that don't exist wait for the next push; anything else
-			// (rate limits, outages) rescans next cycle.
-			if !errors.Is(e, errGHNotFound) {
-				return nil
+		saved.SHA, saved.TokenID = sha, t.id
+		if sha != "" && sha != prev.SHA {
+			body, err := a.gh.Tarball(ctx, t.token, name, sha)
+			if err != nil {
+				return err
+			}
+			refs, err := scanTarball(body, name, sha)
+			body.Close()
+			if err != nil {
+				return err
+			}
+			failed, err := a.SyncCodeRefs(ctx, u, name, refs)
+			if err != nil {
+				return err
+			}
+			for _, e := range failed {
+				a.log.Warn("code ref not watched", "user", u.ID, "repo", name, "err", e)
+				// Refs to items that don't exist wait for the next push; anything else
+				// (rate limits, outages) rescans next cycle.
+				if !errors.Is(e, errGHNotFound) {
+					return nil
+				}
 			}
 		}
+		break
 	}
-	return a.db.SaveCodeRepo(ctx, u.ID, name, r.PushedAt, sha)
+	// A repo no token can read keeps the refs it had, and is tried again after
+	// its next push or once another token lists it.
+	return a.db.SaveCodeRepo(ctx, u.ID, name, saved)
 }
 
 // SyncCodeRefs watches everything refs point at and makes refs the only code

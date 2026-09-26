@@ -100,7 +100,7 @@ var funcs = map[string]any{
 		return h
 	},
 	"join": strings.Join,
-	"sub":  func(a, b int) int { return a - b },
+	"list": func(v ...any) []any { return v },
 	"plural": func(n int, one, many string) string {
 		if n == 1 {
 			return one

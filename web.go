@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -41,8 +42,7 @@ type pageData struct {
 	// settings
 	APIToken     string
 	Saved        bool
-	GitHubTokens []*GitHubToken
-	CodeRepos    map[string]CodeRepo // scanned repos by lowercase owner/name
+	GitHubTokens []*tokenCard
 
 	// email actions
 	Action      string
@@ -592,12 +592,73 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request, u *User) {
 
 func (a *App) settingsPage(ctx context.Context, u *User) (*pageData, error) {
 	d := a.page(u, "Settings · Watchnote")
-	var err error
-	if d.GitHubTokens, err = a.db.GitHubTokens(ctx, u.ID); err != nil {
+	tokens, err := a.db.GitHubTokens(ctx, u.ID)
+	if err != nil {
 		return nil, err
 	}
-	d.CodeRepos, err = a.db.CodeRepos(ctx, u.ID)
-	return d, err
+	scanned, err := a.db.CodeRepos(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, t := range tokens {
+		d.GitHubTokens = append(d.GitHubTokens, newTokenCard(t, scanned))
+	}
+	return d, nil
+}
+
+// tokenCard is a token as Settings shows it: the repos it scans, and apart
+// from them those it lists but GitHub won't let it read.
+type tokenCard struct {
+	*GitHubToken
+	Scans      []repoRow
+	Unreadable []repoRow
+	Others     int // repos it lists but doesn't scan: read-only ones, and forks
+}
+
+type repoRow struct {
+	TokenRepo
+	Status string
+}
+
+func newTokenCard(t *GitHubToken, scanned map[string]CodeRepo) *tokenCard {
+	c := &tokenCard{GitHubToken: t}
+	for _, r := range t.Repos {
+		if !r.Scan {
+			c.Others++
+			continue
+		}
+		s := scanned[r.Key()]
+		switch {
+		case slices.Contains(s.UnreadableBy, t.ID):
+			c.Unreadable = append(c.Unreadable, repoRow{r, "can't read its code"})
+		case s.TokenID == t.ID:
+			c.Scans = append(c.Scans, repoRow{r, "scanned"})
+		case s.TokenID != 0:
+			c.Scans = append(c.Scans, repoRow{r, "scanned with another token"})
+		default:
+			c.Scans = append(c.Scans, repoRow{r, "not scanned yet"})
+		}
+	}
+	return c
+}
+
+// Owners names the accounts and organizations whose repos the token scans.
+func (c *tokenCard) Owners() []string { return ownersOf(c.Scans) }
+
+// UnreadableOwners names those whose repos it lists but can't read.
+func (c *tokenCard) UnreadableOwners() []string { return ownersOf(c.Unreadable) }
+
+func ownersOf(rows []repoRow) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, r := range rows {
+		owner, _, _ := strings.Cut(r.Name, "/")
+		if !seen[strings.ToLower(owner)] {
+			seen[strings.ToLower(owner)] = true
+			out = append(out, owner)
+		}
+	}
+	return out
 }
 
 func parseClock(s string) (sql.NullInt64, bool) {

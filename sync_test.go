@@ -203,19 +203,19 @@ func TestCodeRefScanManyTokens(t *testing.T) {
 		t.Errorf("second token's repo checked %d times", n)
 	}
 	tokens, _ := h.app.db.GitHubTokens(h.ctx(), h.user.ID)
-	if len(tokens) != 2 || len(tokens[1].Scanned()) != 2 || !reflect.DeepEqual(tokens[1].Owners(), []string{"me", "acme"}) {
+	if len(tokens) != 2 || len(tokens[1].Scanned()) != 2 {
 		t.Fatalf("tokens: %+v", tokens)
 	}
 
 	// Settings lists what each token scans.
 	_, body := h.do("GET", "/settings", nil)
-	for _, s := range []string{"Scans <b>1 repo</b>", "Scans <b>2 repos</b>", "Me/Private", "can't read its code",
-		"It can also read 1 repo", "Token for @octocat"} {
+	for _, s := range []string{"Scans <b>1 repo</b>", "scanned with another token", "Me/Private", "can&#39;t read its code",
+		"won't let this token read the code of <b>1\n", "add a token for Me with", "It also lists 1 repo", "Token for @octocat"} {
 		if !strings.Contains(body, s) {
 			t.Errorf("settings missing %q", s)
 		}
 	}
-	if strings.Contains(body, ">acme/docs<") {
+	if strings.Contains(body, ">acme/docs<") || strings.Contains(body, "Scans <b>2 repos</b>") {
 		t.Error("settings lists a repo that isn't scanned")
 	}
 
@@ -281,5 +281,47 @@ func TestMoveTokens(t *testing.T) {
 		if len(users) != 2 || !users[0].HasGitHubToken || users[1].HasGitHubToken {
 			t.Fatalf("users: %+v %+v", users[0], users[1])
 		}
+	}
+}
+
+// A fine-grained token lists every repo its user can push to but reads only
+// its own owner's private ones, so a repo the first token can't read is read
+// with the next, as soon as that one is added.
+func TestCodeRefScanTriesEachToken(t *testing.T) {
+	h := newHarness(t)
+	h.gh.sha = "abc1234def"
+	h.gh.code = map[string]string{"main.go": "// octo/hello#7: from private code\n"}
+	h.gh.readsPrivate = "pat_org"
+	h.gh.repos = []map[string]any{repo("me/private", true, "private")}
+	scan := func() {
+		t.Helper()
+		if err := h.app.scanCode(h.ctx()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mine := h.addToken("pat_me")
+	scan()
+	scan()
+	if n := h.gh.calls["/repos/me/private/git/ref/heads/main"]; n != 1 {
+		t.Fatalf("refused repo checked %d times before anything changed", n)
+	}
+	org := h.addToken("pat_org")
+	scan()
+	ws, _ := h.app.db.ListWatches(h.ctx(), h.user.ID, "active", "")
+	if len(ws) != 1 || len(ws[0].Refs) != 1 {
+		t.Fatalf("repo not read with the token that can: %+v", ws)
+	}
+	repos, _ := h.app.db.CodeRepos(h.ctx(), h.user.ID)
+	if r := repos["me/private"]; r.TokenID != org.ID || !reflect.DeepEqual(r.UnreadableBy, []int64{mine.ID}) {
+		t.Fatalf("code repo: %+v", r)
+	}
+	scan()
+	if n := h.gh.calls["/repos/me/private/git/ref/heads/main"]; n != 2 {
+		t.Errorf("checked %d times; want the first token skipped once refused", n)
+	}
+	d, _ := h.app.settingsPage(h.ctx(), h.user)
+	if a, b := d.GitHubTokens[0], d.GitHubTokens[1]; len(a.Scans) != 0 || len(a.Unreadable) != 1 || len(b.Scans) != 1 ||
+		b.Scans[0].Status != "scanned" || !reflect.DeepEqual(a.UnreadableOwners(), []string{"me"}) {
+		t.Errorf("cards: %+v %+v", a, b)
 	}
 }

@@ -102,6 +102,8 @@ CREATE TABLE IF NOT EXISTS code_repos (
 	repo      TEXT NOT NULL,               -- owner/name, lowercase
 	pushed_at TEXT NOT NULL,               -- GitHub's pushed_at when last scanned
 	sha       TEXT NOT NULL,               -- default branch commit last scanned
+	token_id  INTEGER,                     -- the token that read it, if one could
+	unreadable_by TEXT NOT NULL DEFAULT '[]', -- JSON ids of tokens GitHub refused it to, at pushed_at
 	PRIMARY KEY (user_id, repo)
 );
 
@@ -130,6 +132,8 @@ var addedColumns = []string{
 	`ALTER TABLE items ADD COLUMN merge_sha TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE items ADD COLUMN release_etag TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE items ADD COLUMN released_in TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE code_repos ADD COLUMN token_id INTEGER`,
+	`ALTER TABLE code_repos ADD COLUMN unreadable_by TEXT NOT NULL DEFAULT '[]'`,
 }
 
 // movedTokens moves each user's one GitHub token into github_tokens, from
@@ -427,20 +431,6 @@ func (t *GitHubToken) Scanned() []TokenRepo {
 	for _, r := range t.Repos {
 		if r.Scan {
 			out = append(out, r)
-		}
-	}
-	return out
-}
-
-// Owners names the accounts and organizations whose repos the token can see.
-func (t *GitHubToken) Owners() []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, r := range t.Repos {
-		owner, _, _ := strings.Cut(r.Name, "/")
-		if !seen[strings.ToLower(owner)] {
-			seen[strings.ToLower(owner)] = true
-			out = append(out, owner)
 		}
 	}
 	return out
@@ -837,30 +827,43 @@ func (db *DB) ReplaceCodeRefs(ctx context.Context, uid int64, repo string, refs 
 	return tx.Commit()
 }
 
-type CodeRepo struct{ PushedAt, SHA string }
+type CodeRepo struct {
+	PushedAt     string
+	SHA          string
+	TokenID      int64   // the token that read it; 0 if none could
+	UnreadableBy []int64 // tokens GitHub wouldn't let read it, as of PushedAt
+}
 
 // CodeRepos returns the user's scanned repos by lowercase owner/name.
 func (db *DB) CodeRepos(ctx context.Context, uid int64) (map[string]CodeRepo, error) {
-	rows, err := db.QueryContext(ctx, `SELECT repo, pushed_at, sha FROM code_repos WHERE user_id = ?`, uid)
+	rows, err := db.QueryContext(ctx, `SELECT repo, pushed_at, sha, COALESCE(token_id, 0), unreadable_by
+		FROM code_repos WHERE user_id = ?`, uid)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := map[string]CodeRepo{}
 	for rows.Next() {
-		var name string
+		var name, unreadable string
 		var r CodeRepo
-		if err := rows.Scan(&name, &r.PushedAt, &r.SHA); err != nil {
+		if err := rows.Scan(&name, &r.PushedAt, &r.SHA, &r.TokenID, &unreadable); err != nil {
 			return nil, err
+		}
+		if err := json.Unmarshal([]byte(unreadable), &r.UnreadableBy); err != nil {
+			return nil, fmt.Errorf("code repo %s: %w", name, err)
 		}
 		out[name] = r
 	}
 	return out, rows.Err()
 }
 
-func (db *DB) SaveCodeRepo(ctx context.Context, uid int64, repo, pushedAt, sha string) error {
-	_, err := db.ExecContext(ctx, `INSERT INTO code_repos (user_id, repo, pushed_at, sha) VALUES (?, ?, ?, ?)
-		ON CONFLICT (user_id, repo) DO UPDATE SET pushed_at = excluded.pushed_at, sha = excluded.sha`, uid, repo, pushedAt, sha)
+func (db *DB) SaveCodeRepo(ctx context.Context, uid int64, repo string, r CodeRepo) error {
+	unreadable, _ := json.Marshal(append([]int64{}, r.UnreadableBy...))
+	tokenID := sql.NullInt64{Int64: r.TokenID, Valid: r.TokenID != 0}
+	_, err := db.ExecContext(ctx, `INSERT INTO code_repos (user_id, repo, pushed_at, sha, token_id, unreadable_by)
+		VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (user_id, repo) DO UPDATE SET pushed_at = excluded.pushed_at,
+		sha = excluded.sha, token_id = excluded.token_id, unreadable_by = excluded.unreadable_by`,
+		uid, repo, r.PushedAt, r.SHA, tokenID, string(unreadable))
 	return err
 }
 

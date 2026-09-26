@@ -42,7 +42,7 @@
 
     <div class="field-label">GitHub tokens</div>
     <div class="stack">
-      {{range .GitHubTokens}}{{$scan := .Scanned}}
+      {{range .GitHubTokens}}
       <div class="card stack" id="github-token-{{.ID}}">
         <div class="token-head">
           <div>
@@ -63,23 +63,22 @@
         </div>
         {{if .ListError}}<div class="warn">GitHub didn't list this token's repos: {{.ListError}}
           Until it does, comments in the repos below keep their items watched.</div>{{end}}
-        {{if $scan}}
-          <div>Scans <b>{{len $scan}} {{plural (len $scan) "repo" "repos"}}</b> for comments like
+        {{if .Scans}}
+          <div>Scans <b>{{len .Scans}} {{plural (len .Scans) "repo" "repos"}}</b> for comments like
             <code class="mono">// owner/repo#123: why</code>:</div>
-          {{if gt (len $scan) 8}}<input class="input" type="search" placeholder="Filter repos" data-filter="#repos-{{.ID}}" hidden>{{end}}
-          <ul class="repo-list" id="repos-{{.ID}}">
-            {{range $scan}}{{$c := index $.CodeRepos .Key}}
-            <li data-name="{{.Key}}">
-              <a href="https://github.com/{{.Name}}" target="_blank" rel="noopener">{{.Name}}</a>
-              {{if .Private}}<span class="tag">private</span>{{end}}
-              <span class="muted small">{{if $c.SHA}}scanned{{else if $c.PushedAt}}can't read its code{{else}}not scanned yet{{end}}</span>
-            </li>{{end}}
-          </ul>
+          {{template "repo-list" (list .ID "scans" .Scans)}}
         {{else if .ListedAt}}
-          <div>Scans no repos: it can't see any repo you can push to.</div>
+          <div>Scans no repos: it can't read any repo you can push to.</div>
         {{end}}
-        {{with $n := sub (len .Repos) (len $scan)}}<div class="muted small">It can also read {{$n}} {{plural $n "repo" "repos"}}
-          you can't push to, or forks. Their issues and PRs can be watched, but their code isn't scanned.</div>{{end}}
+        {{if .Unreadable}}
+          <div class="warn">GitHub won't let this token read the code of <b>{{len .Unreadable}}
+            {{plural (len .Unreadable) "repo" "repos"}}</b> you can push to, in {{join .UnreadableOwners ", "}}.
+            A fine-grained token only reads the private repos of the account or organization it was made for,
+            so to scan these, add a token for {{join .UnreadableOwners " and "}} with read-only <b>Contents</b>.</div>
+          {{template "repo-list" (list .ID "unreadable" .Unreadable)}}
+        {{end}}
+        {{with .Others}}<div class="muted small">It also lists {{.}} {{plural . "repo" "repos"}}
+          you can't push to, or forks. Their code isn't scanned.</div>{{end}}
       </div>
       {{end}}
 
@@ -141,4 +140,16 @@
     </form>
   </div>
 </div>
+{{end}}
+
+{{define "repo-list"}}{{$id := printf "repos-%v-%v" (index . 0) (index . 1)}}{{$rows := index . 2}}
+{{if gt (len $rows) 8}}<input class="input" type="search" placeholder="Filter repos" data-filter="#{{$id}}" hidden>{{end}}
+<ul class="repo-list" id="{{$id}}">
+  {{range $rows}}
+  <li data-name="{{.Key}}">
+    <a href="https://github.com/{{.Name}}" target="_blank" rel="noopener">{{.Name}}</a>
+    {{if .Private}}<span class="tag">private</span>{{end}}
+    <span class="muted small">{{.Status}}</span>
+  </li>{{end}}
+</ul>
 {{end}}
