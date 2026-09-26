@@ -33,7 +33,8 @@ type fakeGitHub struct {
 	repos        []map[string]any
 	reposFor     map[string][]map[string]any
 	down         map[string]bool
-	readsPrivate string // the one token me/private's code is readable with
+	readsPrivate string          // the one token me/private's code is readable with
+	seesPrivate  map[string]bool // tokens that see me/private at all
 	sha          string
 	code         map[string]string
 }
@@ -112,6 +113,12 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case "/repos/me/app/git/ref/heads/main":
 		json.NewEncoder(w).Encode(map[string]any{"object": map[string]string{"sha": f.sha}})
+	case "/repos/me/private":
+		if !f.seesPrivate[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")] {
+			w.WriteHeader(404)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"full_name": "me/private", "private": true})
 	case "/repos/me/private/git/ref/heads/main":
 		if tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "); tok != f.readsPrivate {
 			w.WriteHeader(403)
@@ -176,6 +183,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	h := &harness{t: t, app: app, gh: gh, mail: mail, now: time.Date(2026, 9, 24, 15, 0, 0, 0, time.UTC)}
 	app.now = func() time.Time { return h.now }
+	t.Cleanup(app.bg.Wait) // before the database closes
 	h.user, err = db.UpsertGoogleUser(context.Background(), "sub-1", "me@example.com", "Me", "")
 	if err != nil {
 		t.Fatal(err)

@@ -11,9 +11,9 @@ import (
 	"io"
 	"net/url"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Code comments can hold watches: a comment on a line of its own like
@@ -135,7 +135,23 @@ func (a *App) listTokenRepos(ctx context.Context, t *GitHubToken) (token string,
 	return token, repos, a.db.SetTokenRepos(ctx, t.ID, t.Repos, t.ListedAt)
 }
 
+// scanSoon scans u's code in the background, as after a token is added or
+// fixed, so Settings shows what it can read without waiting for the scanner.
+func (a *App) scanSoon(u *User) {
+	a.bg.Add(1)
+	go func() {
+		defer a.bg.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		if err := a.scanUserCode(ctx, u); err != nil {
+			a.log.Error("code scan failed", "user", u.ID, "err", err)
+		}
+	}()
+}
+
 func (a *App) scanUserCode(ctx context.Context, u *User) error {
+	a.scanMu.Lock()
+	defer a.scanMu.Unlock()
 	tokens, err := a.db.GitHubTokens(ctx, u.ID)
 	if err != nil {
 		return err
@@ -174,7 +190,7 @@ func (a *App) scanUserCode(ctx context.Context, u *User) error {
 	scans := 0
 	for _, name := range order {
 		lr, prev := found[name], scanned[name]
-		if prev.PushedAt == lr.repo.PushedAt && !lr.untried(prev) {
+		if prev.PushedAt == lr.repo.PushedAt && !lr.untried(prev, a.now()) {
 			continue
 		}
 		if scans == maxScansPerCycle {
@@ -212,14 +228,24 @@ type repoToken struct {
 	token string
 }
 
+// refusalRetry is how long a token GitHub refused a repo's code to isn't
+// asked for it again, unless the repo is pushed to or the user asks sooner.
+const refusalRetry = 24 * time.Hour
+
+// refused reports whether GitHub refused token id the repo recently.
+func (r CodeRepo) refused(id int64, now time.Time) bool {
+	f, ok := r.Refusals[id]
+	return ok && now.Sub(time.Unix(f.At, 0)) < refusalRetry
+}
+
 // untried reports whether the repo was last left unread and a token that
-// lists it hasn't been refused yet, like one added since.
-func (lr *listedRepo) untried(prev CodeRepo) bool {
+// lists it hasn't been refused it lately, like one added or fixed since.
+func (lr *listedRepo) untried(prev CodeRepo, now time.Time) bool {
 	if prev.TokenID != 0 || prev.SHA != "" {
 		return false
 	}
 	for _, t := range lr.tokens {
-		if !slices.Contains(prev.UnreadableBy, t.id) {
+		if !prev.refused(t.id, now) {
 			return true
 		}
 	}
@@ -227,18 +253,32 @@ func (lr *listedRepo) untried(prev CodeRepo) bool {
 }
 
 func (a *App) scanRepo(ctx context.Context, u *User, name string, lr *listedRepo, prev CodeRepo) error {
-	saved := CodeRepo{PushedAt: lr.repo.PushedAt}
-	if prev.PushedAt == lr.repo.PushedAt {
-		saved.UnreadableBy = prev.UnreadableBy
+	now := a.now()
+	saved := CodeRepo{PushedAt: lr.repo.PushedAt, Refusals: map[int64]Refusal{}}
+	for id := range prev.Refusals {
+		if prev.PushedAt == lr.repo.PushedAt && prev.refused(id, now) {
+			saved.Refusals[id] = prev.Refusals[id]
+		}
 	}
 	for _, t := range lr.tokens {
-		if slices.Contains(saved.UnreadableBy, t.id) {
+		if saved.refused(t.id, now) {
 			continue
 		}
 		sha, err := a.gh.BranchSHA(ctx, t.token, name, lr.repo.DefaultBranch)
 		var se *ghStatusError
 		if errors.As(err, &se) && se.Code == 403 {
-			saved.UnreadableBy = append(saved.UnreadableBy, t.id)
+			// GitHub says 403 both when the token lacks the Contents permission
+			// and when it doesn't cover the repo; whether it sees the repo tells
+			// which, and so what the user should fix.
+			sees, err := a.gh.CanSee(ctx, t.token, name)
+			if err != nil {
+				return err
+			}
+			why := refusedAccess
+			if sees {
+				why = refusedContents
+			}
+			saved.Refusals[t.id] = Refusal{Why: why, At: now.Unix()}
 			continue
 		}
 		if errors.As(err, &se) && se.Code == 409 {
@@ -274,7 +314,7 @@ func (a *App) scanRepo(ctx context.Context, u *User, name string, lr *listedRepo
 		break
 	}
 	// A repo no token can read keeps the refs it had, and is tried again after
-	// its next push or once another token lists it.
+	// its next push, once another token lists it, or a day on.
 	return a.db.SaveCodeRepo(ctx, u.ID, name, saved)
 }
 

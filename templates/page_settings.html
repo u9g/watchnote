@@ -63,6 +63,13 @@
         </div>
         {{if .ListError}}<div class="warn">GitHub didn't list this token's repos: {{.ListError}}
           Until it does, comments in the repos below keep their items watched.</div>{{end}}
+        {{if .NoContents}}
+          <div class="error"><b>This token is missing the Contents permission</b>, so it can't read the code of
+            {{len .NoContents}} {{plural (len .NoContents) "repo" "repos"}} it has access to. On GitHub,
+            <a href="https://github.com/settings/personal-access-tokens" target="_blank" rel="noopener">edit the token</a>,
+            set <b>Repository permissions → Contents</b> to <b>Read-only</b>, then press <b>Check again</b>.</div>
+          {{template "repo-list" (list .ID "nocontents" .NoContents)}}
+        {{end}}
         {{if .Scans}}
           <div>Scans <b>{{len .Scans}} {{plural (len .Scans) "repo" "repos"}}</b> for comments like
             <code class="mono">// owner/repo#123: why</code>:</div>
@@ -70,12 +77,12 @@
         {{else if .ListedAt}}
           <div>Scans no repos: it can't read any repo you can push to.</div>
         {{end}}
-        {{if .Unreadable}}
-          <div class="warn">GitHub won't let this token read the code of <b>{{len .Unreadable}}
-            {{plural (len .Unreadable) "repo" "repos"}}</b> you can push to, in {{join .UnreadableOwners ", "}}.
-            A fine-grained token only reads the private repos of the account or organization it was made for,
-            so to scan these, add a token for {{join .UnreadableOwners " and "}} with read-only <b>Contents</b>.</div>
-          {{template "repo-list" (list .ID "unreadable" .Unreadable)}}
+        {{if .NoAccess}}
+          <div class="warn">This token doesn't cover <b>{{len .NoAccess}} {{plural (len .NoAccess) "repo" "repos"}}</b>
+            you can push to, in {{join .NoAccessOwners ", "}}, so their code isn't scanned with it. A fine-grained token
+            covers only the repos picked for it, of the one account or organization it was made for. To scan these,
+            add them to a token for {{join .NoAccessOwners " or "}} with read-only <b>Contents</b>.</div>
+          {{template "repo-list" (list .ID "noaccess" .NoAccess)}}
         {{end}}
         {{with .Others}}<div class="muted small">It also lists {{.}} {{plural . "repo" "repos"}}
           you can't push to, or forks. Their code isn't scanned.</div>{{end}}
@@ -92,9 +99,9 @@
             <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>.
             A fine-grained token covers the repos of one account or organization, so add one for each.</div>
         {{end}}
-        <div class="small muted">Give it read-only <b>Issues</b>, <b>Pull requests</b> and <b>Metadata</b> access.
-          Watchnote scans the code of every repo it can see that you can push to, forks aside; for private repos,
-          add read-only <b>Contents</b> too. You'll see the list here once it's saved.</div>
+        <div class="small muted">Give it read-only <b>Contents</b>, <b>Issues</b>, <b>Pull requests</b> and
+          <b>Metadata</b> access. Watchnote scans the code of every repo it covers that you can push to, forks aside;
+          without Contents it can't read private repos' code. You'll see what it can read here once it's saved.</div>
         <form class="paste" method="post" action="/settings/github">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <input class="input" type="password" name="token" placeholder="github_pat_…" autocomplete="off" required>

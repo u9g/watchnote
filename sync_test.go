@@ -181,6 +181,7 @@ func TestCodeRefScanManyTokens(t *testing.T) {
 	if resp, _ := h.do("POST", "/settings/github", url.Values{"token": {"pat_me"}}); !strings.Contains(resp.Header.Get("Location"), "already+saved") {
 		t.Errorf("saved the same token twice: %s", resp.Header.Get("Location"))
 	}
+	h.app.bg.Wait()
 	scan := func() {
 		t.Helper()
 		if err := h.app.scanCode(h.ctx()); err != nil {
@@ -209,8 +210,8 @@ func TestCodeRefScanManyTokens(t *testing.T) {
 
 	// Settings lists what each token scans.
 	_, body := h.do("GET", "/settings", nil)
-	for _, s := range []string{"Scans <b>1 repo</b>", "scanned with another token", "Me/Private", "can&#39;t read its code",
-		"won't let this token read the code of <b>1\n", "add a token for Me with", "It also lists 1 repo", "Token for @octocat"} {
+	for _, s := range []string{"Scans <b>1 repo</b>", "scanned with another token", "Me/Private", "not covered by this token",
+		"doesn't cover <b>1 repo</b>", "add them to a token for Me with", "It also lists 1 repo", "Token for @octocat"} {
 		if !strings.Contains(body, s) {
 			t.Errorf("settings missing %q", s)
 		}
@@ -284,14 +285,15 @@ func TestMoveTokens(t *testing.T) {
 	}
 }
 
-// A fine-grained token lists every repo its user can push to but reads only
-// its own owner's private ones, so a repo the first token can't read is read
-// with the next, as soon as that one is added.
+// GitHub refuses a token a repo's code both when it lacks the Contents
+// permission and when it doesn't cover the repo. Settings says which, and a
+// repo one token can't read is read with the next.
 func TestCodeRefScanTriesEachToken(t *testing.T) {
 	h := newHarness(t)
 	h.gh.sha = "abc1234def"
 	h.gh.code = map[string]string{"main.go": "// octo/hello#7: from private code\n"}
 	h.gh.readsPrivate = "pat_org"
+	h.gh.seesPrivate = map[string]bool{"pat_me": true, "pat_org": true}
 	h.gh.repos = []map[string]any{repo("me/private", true, "private")}
 	scan := func() {
 		t.Helper()
@@ -299,29 +301,61 @@ func TestCodeRefScanTriesEachToken(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	checks := func(want int) {
+		t.Helper()
+		if n := h.gh.calls["/repos/me/private/git/ref/heads/main"]; n != want {
+			t.Fatalf("repo checked %d times, want %d", n, want)
+		}
+	}
+
 	mine := h.addToken("pat_me")
 	scan()
 	scan()
-	if n := h.gh.calls["/repos/me/private/git/ref/heads/main"]; n != 1 {
-		t.Fatalf("refused repo checked %d times before anything changed", n)
+	checks(1)
+	d, _ := h.app.settingsPage(h.ctx(), h.user)
+	if c := d.GitHubTokens[0]; len(c.NoContents) != 1 || len(c.Scans) != 0 || len(c.NoAccess) != 0 {
+		t.Fatalf("card: %+v", c)
 	}
+	if _, body := h.do("GET", "/settings", nil); !strings.Contains(body, "This token is missing the Contents permission") {
+		t.Error("missing Contents permission not shown")
+	}
+
+	// Check again asks GitHub again at once, as after fixing the token's permissions.
+	if resp, _ := h.do("POST", "/settings/github/"+strconv.FormatInt(mine.ID, 10)+"/refresh", url.Values{}); resp.StatusCode != 303 {
+		t.Fatalf("refresh: %d", resp.StatusCode)
+	}
+	h.app.bg.Wait()
+	checks(2)
+	// And the scanner asks again a day on.
+	h.now = h.now.Add(refusalRetry + time.Minute)
+	scan()
+	checks(3)
+
+	other := h.addToken("pat_other")
 	org := h.addToken("pat_org")
 	scan()
+	checks(5) // not pat_me, refused within the day
 	ws, _ := h.app.db.ListWatches(h.ctx(), h.user.ID, "active", "")
 	if len(ws) != 1 || len(ws[0].Refs) != 1 {
 		t.Fatalf("repo not read with the token that can: %+v", ws)
 	}
 	repos, _ := h.app.db.CodeRepos(h.ctx(), h.user.ID)
-	if r := repos["me/private"]; r.TokenID != org.ID || !reflect.DeepEqual(r.UnreadableBy, []int64{mine.ID}) {
+	if r := repos["me/private"]; r.TokenID != org.ID || r.Refusals[mine.ID].Why != refusedContents ||
+		r.Refusals[other.ID].Why != refusedAccess {
 		t.Fatalf("code repo: %+v", r)
 	}
 	scan()
-	if n := h.gh.calls["/repos/me/private/git/ref/heads/main"]; n != 2 {
-		t.Errorf("checked %d times; want the first token skipped once refused", n)
+	checks(5)
+
+	d, _ = h.app.settingsPage(h.ctx(), h.user)
+	a, b, c := d.GitHubTokens[0], d.GitHubTokens[1], d.GitHubTokens[2]
+	if len(a.NoContents) != 1 || a.NoContents[0].Status != "needs Contents permission" {
+		t.Errorf("token without Contents: %+v", a)
 	}
-	d, _ := h.app.settingsPage(h.ctx(), h.user)
-	if a, b := d.GitHubTokens[0], d.GitHubTokens[1]; len(a.Scans) != 0 || len(a.Unreadable) != 1 || len(b.Scans) != 1 ||
-		b.Scans[0].Status != "scanned" || !reflect.DeepEqual(a.UnreadableOwners(), []string{"me"}) {
-		t.Errorf("cards: %+v %+v", a, b)
+	if len(b.NoAccess) != 1 || !reflect.DeepEqual(b.NoAccessOwners(), []string{"me"}) {
+		t.Errorf("token not covering the repo: %+v", b)
+	}
+	if len(c.Scans) != 1 || c.Scans[0].Status != "scanned" {
+		t.Errorf("token that reads it: %+v", c)
 	}
 }

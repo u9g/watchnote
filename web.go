@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -611,8 +610,9 @@ func (a *App) settingsPage(ctx context.Context, u *User) (*pageData, error) {
 type tokenCard struct {
 	*GitHubToken
 	Scans      []repoRow
-	Unreadable []repoRow
-	Others     int // repos it lists but doesn't scan: read-only ones, and forks
+	NoContents []repoRow // repos it covers but hasn't the Contents permission for
+	NoAccess   []repoRow // repos it lists but doesn't cover
+	Others     int       // repos it lists but doesn't scan: read-only ones, and forks
 }
 
 type repoRow struct {
@@ -629,8 +629,10 @@ func newTokenCard(t *GitHubToken, scanned map[string]CodeRepo) *tokenCard {
 		}
 		s := scanned[r.Key()]
 		switch {
-		case slices.Contains(s.UnreadableBy, t.ID):
-			c.Unreadable = append(c.Unreadable, repoRow{r, "can't read its code"})
+		case s.Refusals[t.ID].Why == refusedContents:
+			c.NoContents = append(c.NoContents, repoRow{r, "needs Contents permission"})
+		case s.Refusals[t.ID].Why == refusedAccess:
+			c.NoAccess = append(c.NoAccess, repoRow{r, "not covered by this token"})
 		case s.TokenID == t.ID:
 			c.Scans = append(c.Scans, repoRow{r, "scanned"})
 		case s.TokenID != 0:
@@ -645,8 +647,8 @@ func newTokenCard(t *GitHubToken, scanned map[string]CodeRepo) *tokenCard {
 // Owners names the accounts and organizations whose repos the token scans.
 func (c *tokenCard) Owners() []string { return ownersOf(c.Scans) }
 
-// UnreadableOwners names those whose repos it lists but can't read.
-func (c *tokenCard) UnreadableOwners() []string { return ownersOf(c.Unreadable) }
+// NoAccessOwners names those whose repos it lists but doesn't cover.
+func (c *tokenCard) NoAccessOwners() []string { return ownersOf(c.NoAccess) }
 
 func ownersOf(rows []repoRow) []string {
 	var out []string
@@ -743,11 +745,13 @@ func (a *App) handleGitHubToken(w http.ResponseWriter, r *http.Request, u *User)
 		a.serverError(w, err)
 		return
 	}
-	// List its repos now so the page can show them. A failure is saved on the
-	// token and shown there, and the scanner tries again.
+	// List its repos now so the page can show them, and scan them soon so it
+	// shows what the token can read. A listing failure is saved on the token
+	// and shown there, and the scanner tries again.
 	if _, _, err := a.listTokenRepos(ctx, t); err != nil {
 		a.log.Warn("listing a new token's repos failed", "user", u.ID, "err", err)
 	}
+	a.scanSoon(u)
 	http.Redirect(w, r, fmt.Sprintf("/settings?saved=1#github-token-%d", t.ID), http.StatusSeeOther)
 }
 
@@ -761,9 +765,12 @@ func (a *App) handleGitHubRefresh(w http.ResponseWriter, r *http.Request, u *Use
 		a.serverError(w, err)
 		return
 	}
-	if _, _, err := a.listTokenRepos(r.Context(), t); err != nil {
-		a.log.Warn("listing a token's repos failed", "user", u.ID, "token", t.ID, "err", err)
+	// Its permissions may have changed, so ask GitHub again for what it refused.
+	if err := a.db.ForgetRefusals(r.Context(), u.ID, t.ID); err != nil {
+		a.serverError(w, err)
+		return
 	}
+	a.scanSoon(u)
 	http.Redirect(w, r, fmt.Sprintf("/settings#github-token-%d", t.ID), http.StatusSeeOther)
 }
 
