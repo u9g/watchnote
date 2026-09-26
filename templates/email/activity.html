@@ -1,13 +1,14 @@
 <!doctype html>
 <html><body style="margin:0;padding:0;background:#f4f1ec;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1d1d1f">
-<div style="display:none;max-height:0;overflow:hidden">📝 {{.Watch.Why}} — {{.Headline.Summary}}</div>
+<div style="display:none;max-height:0;overflow:hidden">📝 {{with .Watch.Refs}}{{(index . 0).Note}} — {{end}}{{.Headline.Summary}}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:20px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border-radius:12px">
 <tr><td style="padding:20px 22px">
 
   <div style="background:#fff7d6;border:1px solid #f0d98a;border-radius:8px;padding:10px 12px;color:#5a4a12;font-size:14px;line-height:1.45">
-    <b>Why you saved this:</b> {{.Watch.Why}}
-    <div style="font-size:12px;color:#8a7a3a;margin-top:4px">{{.Saved}}</div>
+    <b>Why your code watches this:</b>
+    {{range .Watch.Refs}}<div style="margin-top:4px">{{.Note}} <a href="{{.URL}}" style="color:#8a7a3a;font-size:12px">{{.Repo}}/{{.Path}}:{{.Line}}</a></div>{{end}}
+    <div style="font-size:12px;color:#8a7a3a;margin-top:4px">{{.Since}}</div>
   </div>
 
   <p style="margin:18px 0 4px;font-size:16px;font-weight:700;line-height:1.3">
@@ -36,7 +37,7 @@
   <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:20px"><tr>
     <td style="background:#2f6fed;border-radius:8px"><a href="{{.Links.GitHub}}" style="display:inline-block;padding:10px 16px;color:#fff;font-weight:600;font-size:14px;text-decoration:none">View on GitHub</a></td>
     <td width="8"></td>
-    <td style="border:1px solid #ddd;border-radius:8px"><a href="{{.Links.EditNote}}" style="display:inline-block;padding:9px 16px;color:#1d1d1f;font-weight:600;font-size:14px;text-decoration:none">Edit note</a></td>
+    <td style="border:1px solid #ddd;border-radius:8px"><a href="{{.Links.Watch}}" style="display:inline-block;padding:9px 16px;color:#1d1d1f;font-weight:600;font-size:14px;text-decoration:none">Open in Watchnote</a></td>
   </tr></table>
   {{end}}
 
@@ -44,8 +45,8 @@
 <tr><td style="padding:12px 22px;border-top:1px solid #eee;font-size:12px;color:#6b6b70">
   <a href="{{.Links.Mute}}" style="color:#6b6b70">Mute this item</a> ·
   <a href="{{.Links.StatusOnly}}" style="color:#6b6b70">Status changes only</a> ·
-  <a href="{{.Links.Stop}}" style="color:#6b6b70">Stop watching</a> ·
-  <a href="{{.Links.Settings}}" style="color:#6b6b70">Settings</a>
+  <a href="{{.Links.Settings}}" style="color:#6b6b70">Settings</a><br>
+  To stop watching it, delete the comment.
 </td></tr>
 </table>
 </td></tr></table>

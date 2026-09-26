@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,30 +31,12 @@ const (
 	filterStatusOnly = "state"
 )
 
-var ghURLRe = regexp.MustCompile(`(?i)(?:https?://)?(?:www\.)?github\.com/([\w.-]+)/([\w.-]+)/(issues|pull|pulls)/(\d+)`)
-var ghShortRe = regexp.MustCompile(`^([\w.-]+)/([\w.-]+)#(\d+)$`)
-
 type Ref struct {
 	Owner, Repo string
 	Number      int
 }
 
 func (r Ref) String() string { return fmt.Sprintf("%s/%s#%d", r.Owner, r.Repo, r.Number) }
-
-// parseRef finds a GitHub issue or PR in free text: a URL (anywhere in the
-// text, so shared "title — url" snippets work) or owner/repo#123.
-func parseRef(s string) (Ref, bool) {
-	s = strings.TrimSpace(s)
-	if m := ghURLRe.FindStringSubmatch(s); m != nil {
-		n, _ := strconv.Atoi(m[4])
-		return Ref{m[1], m[2], n}, n > 0
-	}
-	if m := ghShortRe.FindStringSubmatch(s); m != nil {
-		n, _ := strconv.Atoi(m[3])
-		return Ref{m[1], m[2], n}, n > 0
-	}
-	return Ref{}, false
-}
 
 type GitHub struct {
 	BaseURL  string // https://api.github.com

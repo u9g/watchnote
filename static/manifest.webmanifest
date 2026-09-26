@@ -1,7 +1,7 @@
 {
   "name": "Watchnote",
   "short_name": "Watchnote",
-  "description": "Watch GitHub issues and PRs. Remember why.",
+  "description": "Watch the GitHub issues and PRs your code's comments reference.",
   "start_url": "/items",
   "scope": "/",
   "display": "standalone",
@@ -10,10 +10,5 @@
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
-  ],
-  "share_target": {
-    "action": "/share",
-    "method": "GET",
-    "params": { "title": "title", "text": "text", "url": "url" }
-  }
+  ]
 }

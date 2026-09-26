@@ -94,20 +94,17 @@ func TestCodeRefScan(t *testing.T) {
 		t.Error("orphan item kept")
 	}
 
-	// A watch with its own note outlives its comments, including when the token goes.
-	if _, _, err := h.app.AddWatch(h.ctx(), h.user, Ref{"octo", "hello", 7}, "mine", filterEverything, "instant"); err != nil {
-		t.Fatal(err)
-	}
+	// So does removing the token that read them.
 	h.gh.repos[0]["pushed_at"], h.gh.sha = "t3", "eee1111bbb"
 	h.gh.code = map[string]string{"a.go": "// octo/hello#7: from code\n"}
 	scan()
-	if ws := watches(); len(ws) != 1 || ws[0].Why() != "mine\n\nfrom code ([me/app/a.go:1](https://github.com/me/app/blob/eee1111bbb/a.go#L1))" {
-		t.Fatalf("attached: %+v", ws)
+	if ws := watches(); len(ws) != 1 || ws[0].Why() != "from code ([me/app/a.go:1](https://github.com/me/app/blob/eee1111bbb/a.go#L1))" {
+		t.Fatalf("watched again: %+v", ws)
 	}
 	h.app.db.Exec(`DELETE FROM github_tokens`)
 	scan()
-	if ws := watches(); len(ws) != 1 || ws[0].Note != "mine" || len(ws[0].Refs) != 0 {
-		t.Fatalf("detached: %+v", ws)
+	if ws := watches(); len(ws) != 0 {
+		t.Fatalf("watch outlived its token: %+v", ws)
 	}
 	if repos, _ := h.app.db.CodeRepos(h.ctx(), h.user.ID); len(repos) != 0 {
 		t.Errorf("repos kept: %v", repos)
@@ -290,6 +287,48 @@ func TestMoveTokens(t *testing.T) {
 		}
 		if len(users) != 2 || !users[0].HasGitHubToken || users[1].HasGitHubToken {
 			t.Fatalf("users: %+v %+v", users[0], users[1])
+		}
+	}
+}
+
+// Before only code comments kept items watched, watches had notes of their
+// own, and a personal token let the userscript and MCP add them.
+func TestDropNotes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	db, err := openDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`ALTER TABLE watches ADD COLUMN note TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE users ADD COLUMN api_token_hash TEXT`,
+		`INSERT INTO users (id, google_sub, email, api_token_hash, created_at) VALUES (1, 'a', 'a@x', 'hash', 1)`,
+		`INSERT INTO items (id, owner, repo, number, kind, html_url) VALUES (1, 'o', 'r', 1, 'issue', 'u'), (2, 'o', 'r', 2, 'issue', 'u')`,
+		`INSERT INTO watches (id, user_id, item_id, note, filter, delivery, created_at) VALUES
+			(1, 1, 1, 'mine', 'state', 'instant', 1), (2, 1, 2, 'by hand only', 'state', 'instant', 1)`,
+		`INSERT INTO code_refs (watch_id, repo, sha, path, line, note) VALUES (1, 'me/app', 'abc', 'a.go', 1, 'from code')`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Close()
+	for range 2 {
+		db, err := openDB(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ws, _ := db.ListWatches(context.Background(), 1, "active", "")
+		var items, tokens, notes int
+		db.QueryRow(`SELECT COUNT(*) FROM items`).Scan(&items)
+		db.QueryRow(`SELECT COUNT(*) FROM users WHERE api_token_hash IS NOT NULL`).Scan(&tokens)
+		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('watches') WHERE name = 'note'`).Scan(&notes)
+		db.Close()
+		if len(ws) != 1 || ws[0].ID != 1 || ws[0].Why() != "from code ([me/app/a.go:1](https://github.com/me/app/blob/abc/a.go#L1))" {
+			t.Fatalf("watches: %+v", ws)
+		}
+		if items != 1 || tokens != 0 || notes != 0 {
+			t.Fatalf("items %d, personal tokens %d, note columns %d", items, tokens, notes)
 		}
 	}
 }

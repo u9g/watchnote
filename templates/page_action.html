@@ -10,8 +10,8 @@
     </div>
     {{end}}
     {{if .ActionDone}}
-      <div class="ok">{{if eq .Action "stop"}}Stopped watching.{{else}}Done: {{.ActionTitle}}.{{end}}</div>
-      {{if and .ActionWatch (ne .Action "stop")}}<p class="muted">{{.ActionDesc}}</p>{{end}}
+      <div class="ok">Done: {{.ActionTitle}}.</div>
+      <p class="muted">{{.ActionDesc}}</p>
       <a class="btn" href="/items">Open Watchnote</a>
     {{else}}
       <h2>{{.ActionTitle}}?</h2>

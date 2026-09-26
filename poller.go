@@ -224,23 +224,10 @@ func (a *App) fetchSnapshot(ctx context.Context, u *User, r Ref) (snap *Snapshot
 	return nil, "", false, "", err
 }
 
-// Preview describes an item for the "watch" form without storing anything.
-func (a *App) Preview(ctx context.Context, u *User, r Ref) (*Item, error) {
-	if it, err := a.db.ItemByRef(ctx, r.Owner, r.Repo, r.Number); err == nil {
-		return it, nil
-	}
-	snap, _, private, _, err := a.fetchSnapshot(ctx, u, r)
-	if err != nil {
-		return nil, err
-	}
-	it := &Item{Owner: strings.ToLower(r.Owner), Repo: strings.ToLower(r.Repo), Number: r.Number, Private: private}
-	applySnapshot(it, snap)
-	return it, nil
-}
-
-// AddWatch starts watching r for u. If u already watches it, the existing
-// watch is returned with created=false and nothing changes.
-func (a *App) AddWatch(ctx context.Context, u *User, r Ref, note, filter, delivery string) (w *Watch, created bool, err error) {
+// AddWatch starts watching r for u, for a code comment that references it.
+// If u already watches it, the existing watch is returned with created=false
+// and nothing changes.
+func (a *App) AddWatch(ctx context.Context, u *User, r Ref, filter, delivery string) (w *Watch, created bool, err error) {
 	it, err := a.db.ItemByRef(ctx, r.Owner, r.Repo, r.Number)
 	if errors.Is(err, errNotFound) {
 		it, err = a.createItem(ctx, u, r)
@@ -256,7 +243,7 @@ func (a *App) AddWatch(ctx context.Context, u *User, r Ref, note, filter, delive
 	if err != nil {
 		return nil, false, err
 	}
-	w = &Watch{UserID: u.ID, ItemID: it.ID, Note: note, Filter: filter, Delivery: delivery,
+	w = &Watch{UserID: u.ID, ItemID: it.ID, Filter: filter, Delivery: delivery,
 		NotifiedEventID: maxID, ViewedEventID: maxID, CreatedAt: a.now().Unix()}
 	if err := a.db.InsertWatch(ctx, w); err != nil {
 		return nil, false, err
@@ -292,7 +279,7 @@ func (a *App) createItem(ctx context.Context, u *User, r Ref) (*Item, error) {
 	}
 	it.Owner, it.Repo = strings.ToLower(it.Owner), strings.ToLower(it.Repo)
 	// Seed the timeline so existing history isn't emailed as new. A half-seeded
-	// item would email old history later, so drop it and let the user retry.
+	// item would email old history later, so drop it and try again next scan.
 	if _, err := a.syncTimeline(ctx, it, token, now); err != nil {
 		a.db.ExecContext(ctx, `DELETE FROM items WHERE id = ?`, it.ID)
 		return nil, err

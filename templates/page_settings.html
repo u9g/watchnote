@@ -11,36 +11,7 @@
       <div><b>{{.User.Email}}</b><div class="muted">Signed in with Google. Emails go here.</div></div>
     </div>
 
-    <form class="stack" method="post" action="/settings">
-      <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <div class="field-label">Defaults for new items</div>
-      {{template "prefs" .}}
-
-      <div class="field-label">Timezone</div>
-      <div class="paste">
-        <input class="input" name="tz" value="{{if .User.TZ}}{{.User.TZ}}{{else}}UTC{{end}}" required>
-        <button type="button" class="btn" data-detect-tz>Use this device's</button>
-      </div>
-
-      <div class="field-label">Daily digest time</div>
-      <select class="input" name="digest_hour">
-        {{$h := .User.DigestHour}}{{range hours}}<option value="{{.}}"{{if eq . $h}} selected{{end}}>{{hourLabel .}}</option>{{end}}
-      </select>
-
-      <div class="field-label">Quiet hours</div>
-      <div class="card">
-        <label class="toggle-row"><span>Hold emails overnight, then send them in one batch</span>
-          <input type="checkbox" class="sw" name="quiet"{{if .User.QuietStart.Valid}} checked{{end}}></label>
-        <div class="row">
-          <input class="input" type="time" name="quiet_start" value="{{if .User.QuietStart.Valid}}{{minutes .User.QuietStart.Int64}}{{else}}22:00{{end}}">
-          <span class="muted">to</span>
-          <input class="input" type="time" name="quiet_end" value="{{if .User.QuietEnd.Valid}}{{minutes .User.QuietEnd.Int64}}{{else}}07:00{{end}}">
-        </div>
-      </div>
-      <button class="btn primary">Save settings</button>
-    </form>
-
-    <div class="field-label">GitHub tokens</div>
+    <div class="field-label" id="github-tokens">GitHub tokens</div>
     <div class="stack">
       {{range .GitHubTokens}}
       <div class="card stack" id="github-token-{{.ID}}">
@@ -55,7 +26,7 @@
               <button class="btn ghost">Check again</button>
             </form>
             <form method="post" action="/settings/github/{{.ID}}/remove"
-              data-confirm="Remove this token? Comments in the repos only it covers will stop keeping items watched.">
+              data-confirm="Remove this token? Items referenced only by comments in the repos just it covers will stop being watched.">
               <input type="hidden" name="csrf" value="{{$.CSRF}}">
               <button class="btn ghost danger-text">Remove</button>
             </form>
@@ -94,9 +65,9 @@
           <div><b>Add a token for another account or organization.</b> A fine-grained token covers
             the repos of one owner, so add one for each.</div>
         {{else}}
-          <div>Public issues and PRs work without a token. To watch items in private repos, and to let comments like
+          <div>Watchnote watches the issues and PRs that comments like
             <code class="mono">// owner/repo#123: why</code> (<a href="/docs/code-comments">all formats</a>)
-            in your code keep items watched, add a
+            in your code reference. To let it read your code, add a
             <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>.
             A fine-grained token covers the repos of one account or organization, so add one for each.</div>
         {{end}}
@@ -111,37 +82,34 @@
       </div>
     </div>
 
-    <div class="field-label">Personal token</div>
-    <div class="card stack">
-      <div>Lets the GitHub button and AI assistants (over MCP) use your Watchnote.</div>
-      {{if .APIToken}}
-        <div class="ok">Copy this token now. It won't be shown again.</div>
-        <input class="input mono" readonly value="{{.APIToken}}" data-select>
-      {{end}}
-      <form method="post" action="/settings/api-token"{{if .User.HasAPIToken}} data-confirm="This replaces your current token. The GitHub button and MCP clients will need the new one."{{end}}>
-        <input type="hidden" name="csrf" value="{{.CSRF}}">
-        <button class="btn">{{if .User.HasAPIToken}}Replace token{{else}}Generate token{{end}}</button>
-      </form>
-    </div>
+    <form class="stack" method="post" action="/settings">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <div class="field-label">Emails for newly referenced items</div>
+      {{template "prefs" .}}
 
-    <div class="field-label">GitHub button</div>
-    <div class="card stack">
-      <div>Adds a <b>Watch with note</b> button to GitHub issue and PR pages. Needs
-        <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener">Tampermonkey</a>,
-        Violentmonkey or Greasemonkey.</div>
-      <ol class="small">
-        <li><a href="/watchnote.user.js">Install the userscript</a>.</li>
-        <li>The first time you click the button on GitHub, paste your token in.</li>
-      </ol>
-    </div>
+      <div class="field-label">Timezone</div>
+      <div class="paste">
+        <input class="input" name="tz" value="{{if .User.TZ}}{{.User.TZ}}{{else}}UTC{{end}}" required>
+        <button type="button" class="btn" data-detect-tz>Use this device's</button>
+      </div>
 
-    <div class="field-label">MCP</div>
-    <div class="card stack">
-      <div>Let an AI assistant list your watches, read their notes and activity, and add or change them.
-        The server is at <code class="mono">{{.BaseURL}}/mcp</code> and takes your token as a bearer token. In Claude Code:</div>
-      <input class="input mono" readonly data-select
-        value="claude mcp add --transport http watchnote {{.BaseURL}}/mcp --header &quot;Authorization: Bearer {{if .APIToken}}{{.APIToken}}{{else}}&lt;your token&gt;{{end}}&quot;">
-    </div>
+      <div class="field-label">Daily digest time</div>
+      <select class="input" name="digest_hour">
+        {{$h := .User.DigestHour}}{{range hours}}<option value="{{.}}"{{if eq . $h}} selected{{end}}>{{hourLabel .}}</option>{{end}}
+      </select>
+
+      <div class="field-label">Quiet hours</div>
+      <div class="card">
+        <label class="toggle-row"><span>Hold emails overnight, then send them in one batch</span>
+          <input type="checkbox" class="sw" name="quiet"{{if .User.QuietStart.Valid}} checked{{end}}></label>
+        <div class="row">
+          <input class="input" type="time" name="quiet_start" value="{{if .User.QuietStart.Valid}}{{minutes .User.QuietStart.Int64}}{{else}}22:00{{end}}">
+          <span class="muted">to</span>
+          <input class="input" type="time" name="quiet_end" value="{{if .User.QuietEnd.Valid}}{{minutes .User.QuietEnd.Int64}}{{else}}07:00{{end}}">
+        </div>
+      </div>
+      <button class="btn primary">Save settings</button>
+    </form>
 
     <form method="post" action="/logout">
       <button class="btn ghost danger-text">Sign out</button>

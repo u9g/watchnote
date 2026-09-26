@@ -252,7 +252,7 @@ func subjectFor(it *Item, evs []*Event) string {
 }
 
 type emailLinks struct {
-	GitHub, EditNote, Settings, Mute, StatusOnly, Stop, Done string
+	GitHub, Watch, Settings, Mute, StatusOnly, Done string
 }
 
 func (a *App) linksFor(w *Watch, githubURL string) emailLinks {
@@ -261,11 +261,10 @@ func (a *App) linksFor(w *Watch, githubURL string) emailLinks {
 	}
 	return emailLinks{
 		GitHub:     githubURL,
-		EditNote:   fmt.Sprintf("%s/items/%d#edit-note", a.cfg.BaseURL, w.ID),
+		Watch:      fmt.Sprintf("%s/items/%d", a.cfg.BaseURL, w.ID),
 		Settings:   a.cfg.BaseURL + "/settings",
 		Mute:       signed("mute"),
 		StatusOnly: signed("statusonly"),
-		Stop:       signed("stop"),
 		Done:       signed("done"),
 	}
 }
@@ -273,7 +272,7 @@ func (a *App) linksFor(w *Watch, githubURL string) emailLinks {
 type activityEmail struct {
 	Item     *Item
 	Watch    *Watch
-	Saved    string
+	Since    string
 	Headline *Event
 	Others   []*Event
 	Resolved bool // merged or closed: ask if they're done
@@ -295,7 +294,7 @@ func (a *App) sendActivity(ctx context.Context, u *User, w *Watch, evs []*Event)
 	}
 	data := activityEmail{
 		Item: w.Item, Watch: w, Headline: h, Others: others,
-		Saved:    savedLabel(w, u, a.now()),
+		Since:    sinceLabel(w, u, a.now()),
 		Resolved: h.Kind == "merged" || h.Kind == "closed" || h.Kind == "released",
 		Links:    a.linksFor(w, link),
 		BaseURL:  a.cfg.BaseURL,
@@ -304,7 +303,7 @@ func (a *App) sendActivity(ctx context.Context, u *User, w *Watch, evs []*Event)
 	if err != nil {
 		return err
 	}
-	m := &Message{To: u.Email, Subject: subjectFor(w.Item, evs), HTML: html, Text: text, Headers: a.threadHeaders(w, data.Links.Stop)}
+	m := &Message{To: u.Email, Subject: subjectFor(w.Item, evs), HTML: html, Text: text, Headers: a.threadHeaders(w, data.Links.Mute)}
 	return a.mail.Send(ctx, a.cfg.MailFrom, m)
 }
 
@@ -316,7 +315,7 @@ type digestEmail struct {
 type digestEntry struct {
 	Item   *Item
 	Watch  *Watch
-	Saved  string
+	Since  string
 	Events []*Event
 	Links  emailLinks
 }
@@ -326,7 +325,7 @@ func (a *App) sendDigest(ctx context.Context, u *User, pws []pendingWatch) error
 	data := digestEmail{BaseURL: a.cfg.BaseURL}
 	for _, pw := range pws {
 		data.Entries = append(data.Entries, digestEntry{
-			Item: pw.w.Item, Watch: pw.w, Saved: savedLabel(pw.w, u, a.now()), Events: pw.evs,
+			Item: pw.w.Item, Watch: pw.w, Since: sinceLabel(pw.w, u, a.now()), Events: pw.evs,
 			Links: a.linksFor(pw.w, pw.w.Item.HTMLURL),
 		})
 	}
@@ -343,9 +342,9 @@ func (a *App) sendDigest(ctx context.Context, u *User, pws []pendingWatch) error
 	return a.mail.Send(ctx, a.cfg.MailFrom, m)
 }
 
-func savedLabel(w *Watch, u *User, now time.Time) string {
+func sinceLabel(w *Watch, u *User, now time.Time) string {
 	t := time.Unix(w.CreatedAt, 0).In(userLocation(u))
-	s := "Saved " + t.Format("Jan 2, 2006")
+	s := "Watched since " + t.Format("Jan 2, 2006")
 	if days := int(now.Sub(t).Hours() / 24); days >= 7 {
 		s += fmt.Sprintf(" · %d days ago", days)
 	}
@@ -366,7 +365,8 @@ func (a *App) messageID(kind string) string {
 }
 
 // threadHeaders point every email about a watch at one root message, which
-// clients that thread by References (Apple Mail, Thunderbird, Outlook) group together.
+// clients that thread by References (Apple Mail, Thunderbird, Outlook) group
+// together. Unsubscribing mutes the watch; only deleting the comment stops it.
 func (a *App) threadHeaders(w *Watch, unsubscribe string) map[string]string {
 	root := fmt.Sprintf("<watch-%d@%s>", w.ID, a.mailDomain())
 	return map[string]string{

@@ -1,13 +1,13 @@
 {{define "content"}}
 <main class="landing">
   <div class="logo big"><i></i>Watchnote</div>
-  <h1>Watch GitHub issues &amp; PRs.<br>Remember why.</h1>
-  <p class="muted">Paste a link and add a note. We'll email you when anything changes, with your note at the top.</p>
-  <div class="card sample">
-    <div class="meta"><span class="badge open">Open PR</span> vercel/next.js #58112</div>
-    <div class="title">Middleware breaks with edge runtime</div>
-    <div class="note">Blocks our upgrade to v15. Check when fixed.</div>
-  </div>
+  <h1>Your code says why.<br>We watch the rest.</h1>
+  <p class="muted">When code exists because of a GitHub issue or PR, say so in a comment. Watchnote finds it in your repos,
+    emails you when the issue or PR changes, with your comment at the top, and stops once you delete it.</p>
+  <pre class="card sample mono">// vercel/next.js#58112: Blocks our upgrade to v15.
+// Drop this middleware shim once it's fixed.
+export const config = { runtime: "nodejs" };</pre>
+  <p class="small muted"><a href="/docs/code-comments">Every comment style that works</a></p>
   {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
   {{if .GoogleOn}}
   <a class="btn google" href="/auth/google?next={{.Next}}"><span class="g"></span>Continue with Google</a>

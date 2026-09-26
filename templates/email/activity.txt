@@ -1,5 +1,6 @@
-WHY YOU SAVED THIS: {{.Watch.Why}}
-({{.Saved}})
+WHY YOUR CODE WATCHES THIS:
+{{.Watch.Why}}
+({{.Since}})
 
 {{.Item.Title}}
 {{.Item.Ref}} · {{stateLabel .Item}}
@@ -14,8 +15,8 @@ Also since your last email:
 Is that what you were waiting for? Mark it done: {{.Links.Done}}
 {{end}}
 View on GitHub: {{.Links.GitHub}}
-Edit note: {{.Links.EditNote}}
+Open in Watchnote: {{.Links.Watch}}
 
 Mute this item: {{.Links.Mute}}
 Status changes only: {{.Links.StatusOnly}}
-Stop watching: {{.Links.Stop}}
+To stop watching it, delete the comment.

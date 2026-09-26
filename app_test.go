@@ -209,11 +209,32 @@ func (h *harness) tick(d time.Duration) {
 	}
 }
 
+// comment makes note the one code comment in me/app, referencing octo/hello#7.
+func (h *harness) comment(note string) {
+	h.t.Helper()
+	c := CodeRef{Target: Ref{"Octo", "hello", 7}, Repo: "me/app", SHA: "abc1234def", Path: "main.go", Line: 3, Note: note}
+	if failed, err := h.app.SyncCodeRefs(h.ctx(), h.user, "me/app", []CodeRef{c}); err != nil || len(failed) > 0 {
+		h.t.Fatalf("SyncCodeRefs: %v %v", err, failed)
+	}
+}
+
+// addWatch watches octo/hello#7 the only way there is, from a code comment.
 func (h *harness) addWatch(filter string) *Watch {
 	h.t.Helper()
-	w, created, err := h.app.AddWatch(h.ctx(), h.user, Ref{"Octo", "hello", 7}, "Remove the sleep in tests/shutdown.rs", filter, "instant")
-	if err != nil || !created {
-		h.t.Fatalf("AddWatch: %v created=%v", err, created)
+	h.comment("Remove the sleep in tests/shutdown.rs")
+	it, err := h.app.db.ItemByRef(h.ctx(), "octo", "hello", 7)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	w, err := h.app.db.UserWatchForItem(h.ctx(), h.user.ID, it.ID)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if err := h.app.db.SetWatchPrefs(h.ctx(), w.ID, filter, "instant"); err != nil {
+		h.t.Fatal(err)
+	}
+	if w, err = h.app.db.WatchByID(h.ctx(), w.ID); err != nil {
+		h.t.Fatal(err)
 	}
 	return w
 }
@@ -246,13 +267,18 @@ func TestActivityEmailFlow(t *testing.T) {
 	if want := "[octo/hello#7] Closed (+1 more)"; m.Subject != want {
 		t.Errorf("subject = %q, want %q", m.Subject, want)
 	}
-	for _, s := range []string{"Remove the sleep in tests/shutdown.rs", "carol commented", "Is that what you were waiting for?", "/e/done?w="} {
+	for _, s := range []string{"Remove the sleep in tests/shutdown.rs", "me/app/main.go:3", "carol commented",
+		"Is that what you were waiting for?", "/e/done?w=", "delete the comment"} {
 		if !strings.Contains(m.Text, s) {
 			t.Errorf("email text missing %q:\n%s", s, m.Text)
 		}
 	}
-	if !strings.Contains(m.HTML, "Why you saved this:") {
-		t.Error("HTML email missing note block")
+	if !strings.Contains(m.HTML, "Why your code watches this:") ||
+		!strings.Contains(m.HTML, `href="https://github.com/me/app/blob/abc1234def/main.go#L3"`) {
+		t.Error("HTML email missing the comment")
+	}
+	if !strings.Contains(m.Headers["List-Unsubscribe"], "/e/mute?w=") {
+		t.Errorf("List-Unsubscribe = %q, want it to mute", m.Headers["List-Unsubscribe"])
 	}
 	if m.Headers["References"] != fmt.Sprintf("<watch-%d@watchnote.test>", w.ID) {
 		t.Errorf("References = %q", m.Headers["References"])
@@ -440,53 +466,73 @@ func TestWebFlow(t *testing.T) {
 	h.gh.add(comment(1, "alice", "hello"))
 
 	resp, body := h.do("GET", "/items", nil)
-	if resp.StatusCode != 200 || !strings.Contains(body, "Nothing watched yet") {
+	if resp.StatusCode != 200 || !strings.Contains(body, "Nothing watched yet") || !strings.Contains(body, "add a GitHub token") {
 		t.Fatalf("empty list: %d\n%s", resp.StatusCode, body)
 	}
-	resp, body = h.do("GET", "/items/new?url="+url.QueryEscape("https://github.com/octo/hello/issues/7"), nil)
-	if resp.StatusCode != 200 || !strings.Contains(body, "Flaky shutdown") {
-		t.Fatalf("preview: %d\n%s", resp.StatusCode, body)
-	}
-	resp, body = h.do("POST", "/items", url.Values{"url": {"https://github.com/octo/hello/issues/7"}, "note": {""}, "cat": {"state"}})
-	if resp.StatusCode != 422 || !strings.Contains(body, "Add a note") {
-		t.Fatalf("empty note accepted: %d", resp.StatusCode)
-	}
-	resp, _ = h.do("POST", "/items", url.Values{"url": {"https://github.com/octo/hello/issues/7"}, "note": {"Blocks v2"}, "cat": {"state", "comments"}, "delivery": {"instant"}})
-	if resp.StatusCode != 303 {
-		t.Fatalf("create: %d", resp.StatusCode)
-	}
-	loc := resp.Header.Get("Location")
+	w := h.addWatch(filterEverything)
+	loc := fmt.Sprintf("/items/%d", w.ID)
 	resp, body = h.do("GET", loc, nil)
-	if resp.StatusCode != 200 || !strings.Contains(body, "Blocks v2") || !strings.Contains(body, "alice commented") {
-		t.Fatalf("detail: %d\n%s", resp.StatusCode, body)
+	for _, s := range []string{"Remove the sleep in tests/shutdown.rs", "alice commented",
+		`href="https://github.com/me/app/blob/abc1234def/main.go#L3"`, "To stop watching, delete it."} {
+		if resp.StatusCode != 200 || !strings.Contains(body, s) {
+			t.Fatalf("detail: %d, missing %q\n%s", resp.StatusCode, s, body)
+		}
 	}
-	// Watching again redirects to the existing item.
-	resp, _ = h.do("GET", "/items/new?url=octo/hello%237", nil)
-	if resp.StatusCode != 303 || resp.Header.Get("Location") != loc {
-		t.Fatalf("re-watch should redirect to %s, got %d %s", loc, resp.StatusCode, resp.Header.Get("Location"))
-	}
-	resp, _ = h.do("POST", loc+"/note", url.Values{"note": {"Blocks **v3** now <script>x</script>"}})
-	if resp.StatusCode != 303 {
-		t.Fatalf("edit note: %d", resp.StatusCode)
-	}
+	h.comment("Blocks **v3** now <script>x</script>")
 	_, body = h.do("GET", loc, nil)
 	if !strings.Contains(body, "Blocks <strong>v3</strong> now") || strings.Contains(body, "<script>x") {
-		t.Fatalf("note not rendered as safe markdown:\n%s", body)
+		t.Fatalf("comment not rendered as safe markdown:\n%s", body)
 	}
-	_, body = h.do("GET", "/items?q=v3", nil)
-	if !strings.Contains(body, "Blocks <strong>v3</strong> now") {
-		t.Fatal("search by note failed")
+	if _, body = h.do("GET", "/items?q=v3", nil); !strings.Contains(body, "Flaky shutdown") {
+		t.Fatal("search by comment failed")
+	}
+	if _, body = h.do("GET", "/items?q=nothing+like+it", nil); strings.Contains(body, "Flaky shutdown") {
+		t.Fatal("search matched everything")
 	}
 	// Missing CSRF is rejected.
-	req, _ := http.NewRequest("POST", h.srv.URL+loc+"/delete", nil)
+	req, _ := http.NewRequest("POST", h.srv.URL+loc+"/status", strings.NewReader("status=muted"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: h.app.keys.SessionValue(h.user.ID, time.Now())})
 	if r, _ := h.client().Do(req); r.StatusCode != 403 {
-		t.Fatalf("delete without csrf: %d", r.StatusCode)
+		t.Fatalf("status without csrf: %d", r.StatusCode)
 	}
-	for _, p := range []string{"/settings", "/", "/manifest.webmanifest", "/icon-192.png", "/watchnote.user.js", "/static/style.css"} {
+	if resp, _ = h.do("POST", loc+"/status", url.Values{"status": {"muted"}}); resp.StatusCode != 303 {
+		t.Fatalf("mute: %d", resp.StatusCode)
+	}
+	if got, _ := h.app.db.WatchByID(h.ctx(), w.ID); got.Status != "muted" {
+		t.Errorf("status = %s, want muted", got.Status)
+	}
+	for _, p := range []string{"/settings", "/", "/manifest.webmanifest", "/icon-192.png", "/static/style.css"} {
 		if resp, _ := h.do("GET", p, nil); resp.StatusCode >= 400 {
 			t.Errorf("GET %s: %d", p, resp.StatusCode)
 		}
+	}
+}
+
+// Code comments are the only way in: nothing adds, edits or deletes a watch
+// by hand, and there's no userscript, JSON API or MCP server.
+func TestNoManualWatches(t *testing.T) {
+	h := newHarness(t)
+	w := h.addWatch(filterEverything)
+	for _, r := range []struct{ method, path string }{
+		{"GET", "/items/new?url=octo/hello%237"}, {"POST", "/items"}, {"GET", "/share?url=octo/hello%237"},
+		{"POST", fmt.Sprintf("/items/%d/note", w.ID)}, {"POST", fmt.Sprintf("/items/%d/delete", w.ID)},
+		{"POST", "/settings/api-token"}, {"GET", "/api/watch"}, {"POST", "/api/watch"},
+		{"GET", "/watchnote.user.js"}, {"POST", "/mcp"},
+	} {
+		var form url.Values
+		if r.method == "POST" {
+			form = url.Values{"note": {"by hand"}, "url": {"octo/hello#7"}}
+		}
+		if resp, _ := h.do(r.method, r.path, form); resp.StatusCode != 404 && resp.StatusCode != 405 {
+			t.Errorf("%s %s: %d", r.method, r.path, resp.StatusCode)
+		}
+	}
+	if _, err := h.app.db.WatchByID(h.ctx(), w.ID); err != nil {
+		t.Fatalf("watch changed: %v", err)
+	}
+	if _, body := h.do("GET", "/settings", nil); strings.Contains(body, "MCP") || strings.Contains(body, "userscript") {
+		t.Error("settings still offer MCP or the userscript")
 	}
 }
 
@@ -548,7 +594,7 @@ func TestDoneBadge(t *testing.T) {
 func TestEmailActionLinks(t *testing.T) {
 	h := newHarness(t)
 	w := h.addWatch(filterEverything)
-	sig := h.app.keys.LinkSig("stop", w.ID)
+	sig := h.app.keys.LinkSig("mute", w.ID)
 	get := func(path string) int {
 		resp, err := http.Get(h.srv.URL + path)
 		if err != nil {
@@ -557,89 +603,35 @@ func TestEmailActionLinks(t *testing.T) {
 		resp.Body.Close()
 		return resp.StatusCode
 	}
-	if code := get(fmt.Sprintf("/e/stop?w=%d&s=bad", w.ID)); code != 403 {
+	if code := get(fmt.Sprintf("/e/mute?w=%d&s=bad", w.ID)); code != 403 {
 		t.Errorf("bad signature: %d", code)
 	}
-	if code := get(fmt.Sprintf("/e/mute?w=%d&s=%s", w.ID, sig)); code != 403 {
+	if code := get(fmt.Sprintf("/e/done?w=%d&s=%s", w.ID, sig)); code != 403 {
 		t.Errorf("signature reused for another action: %d", code)
 	}
+	// Only deleting the comment stops a watch.
+	if code := get(fmt.Sprintf("/e/stop?w=%d&s=%s", w.ID, h.app.keys.LinkSig("stop", w.ID))); code != 403 {
+		t.Errorf("stop link: %d", code)
+	}
 	// GET only confirms (link scanners must not unsubscribe people).
-	if code := get(fmt.Sprintf("/e/stop?w=%d&s=%s", w.ID, sig)); code != 200 {
+	if code := get(fmt.Sprintf("/e/mute?w=%d&s=%s", w.ID, sig)); code != 200 {
 		t.Fatalf("confirm page: %d", code)
 	}
-	if _, err := h.app.db.WatchByID(h.ctx(), w.ID); err != nil {
-		t.Fatal("GET deleted the watch")
+	if got, _ := h.app.db.WatchByID(h.ctx(), w.ID); got.Status != "active" {
+		t.Fatal("GET muted the watch")
 	}
 	// RFC 8058 one-click POST.
-	resp, err := http.Post(h.srv.URL+fmt.Sprintf("/e/stop?w=%d&s=%s", w.ID, sig), "application/x-www-form-urlencoded",
+	resp, err := http.Post(h.srv.URL+fmt.Sprintf("/e/mute?w=%d&s=%s", w.ID, sig), "application/x-www-form-urlencoded",
 		strings.NewReader("List-Unsubscribe=One-Click"))
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("one-click: %v %d", err, resp.StatusCode)
 	}
-	if _, err := h.app.db.WatchByID(h.ctx(), w.ID); err != errNotFound {
-		t.Fatal("watch not deleted")
-	}
-	if it, _ := h.app.db.ItemByRef(h.ctx(), "octo", "hello", 7); it != nil {
-		t.Error("orphan item not cleaned up")
-	}
-}
-
-func TestAPI(t *testing.T) {
-	h := newHarness(t)
-	tok := "wn_test"
-	h.app.db.SetAPITokenHash(h.ctx(), h.user.ID, hashToken(tok))
-	call := func(method, path, body, token string) (int, map[string]any) {
-		req, _ := http.NewRequest(method, h.srv.URL+path, strings.NewReader(body))
-		req.Header.Set("Authorization", "Bearer "+token)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer resp.Body.Close()
-		var out map[string]any
-		json.NewDecoder(resp.Body).Decode(&out)
-		return resp.StatusCode, out
-	}
-	u := url.QueryEscape("https://github.com/octo/hello/pull/7/files")
-	if code, _ := call("GET", "/api/watch?url="+u, "", "nope"); code != 401 {
-		t.Errorf("bad token: %d", code)
-	}
-	if code, out := call("GET", "/api/watch?url="+u, "", tok); code != 200 || out["watching"] != false {
-		t.Errorf("lookup before: %d %v", code, out)
-	}
-	code, out := call("POST", "/api/watch", `{"url":"https://github.com/octo/hello/issues/7","note":"from GitHub","preset":"status"}`, tok)
-	if code != 201 || out["watching"] != true {
-		t.Fatalf("create: %d %v", code, out)
-	}
-	if code, out := call("GET", "/api/watch?url="+u, "", tok); code != 200 || out["note"] != "from GitHub" {
-		t.Errorf("lookup after: %d %v", code, out)
-	}
-	if code, _ := call("POST", "/api/watch", `{"url":"https://github.com/octo/missing/issues/1","note":"x"}`, tok); code != 404 {
-		t.Errorf("missing item: %d", code)
+	if got, _ := h.app.db.WatchByID(h.ctx(), w.ID); got.Status != "muted" {
+		t.Fatalf("status = %s, want muted", got.Status)
 	}
 }
 
 // ---- units ----
-
-func TestParseRef(t *testing.T) {
-	for in, want := range map[string]string{
-		"https://github.com/rust-lang/rust/pull/12744":          "rust-lang/rust#12744",
-		"github.com/cli/cli/issues/9021#issuecomment-1":         "cli/cli#9021",
-		"https://github.com/a/b.js/pull/3/files":                "a/b.js#3",
-		"Look at this — https://github.com/x/y/issues/5 thanks": "x/y#5",
-		"vercel/next.js#58112":                                  "vercel/next.js#58112",
-	} {
-		r, ok := parseRef(in)
-		if !ok || r.String() != want {
-			t.Errorf("parseRef(%q) = %v %v, want %s", in, r, ok, want)
-		}
-	}
-	for _, in := range []string{"", "https://github.com/a/b", "https://gitlab.com/a/b/issues/1", "a/b#0"} {
-		if _, ok := parseRef(in); ok {
-			t.Errorf("parseRef(%q) should fail", in)
-		}
-	}
-}
 
 func TestClassify(t *testing.T) {
 	now := time.Now()

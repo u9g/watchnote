@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS users (
 	quiet_end        INTEGER,
 	digest_hour      INTEGER NOT NULL DEFAULT 8,
 	last_digest_day  TEXT NOT NULL DEFAULT '', -- YYYY-MM-DD in the user's tz
-	api_token_hash   TEXT UNIQUE,
 	created_at       INTEGER NOT NULL
 );
 
@@ -75,7 +74,6 @@ CREATE TABLE IF NOT EXISTS watches (
 	id                INTEGER PRIMARY KEY,
 	user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	item_id           INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-	note              TEXT NOT NULL,
 	filter            TEXT NOT NULL,       -- comma-separated categories
 	delivery          TEXT NOT NULL,       -- instant | digest
 	status            TEXT NOT NULL DEFAULT 'active', -- active | muted | done
@@ -86,7 +84,7 @@ CREATE TABLE IF NOT EXISTS watches (
 );
 
 -- A comment in some repo's code that references a watched item. Each sync
--- replaces one repo's rows; a watch with no note and no refs is deleted.
+-- replaces one repo's rows; a watch with no refs left is deleted.
 CREATE TABLE IF NOT EXISTS code_refs (
 	watch_id INTEGER NOT NULL REFERENCES watches(id) ON DELETE CASCADE,
 	repo     TEXT NOT NULL,                -- owner/name the comment is in, lowercase
@@ -145,13 +143,26 @@ var movedTokens = []string{
 	`ALTER TABLE users DROP COLUMN github_login`,
 }
 
-func moveTokens(db *sql.DB) error {
+// droppedNotes removes watches' own notes, from before only code comments
+// kept items watched, along with the watches that had nothing else. SQLite
+// can't drop the UNIQUE column that held personal tokens for the userscript
+// and MCP, so it's only emptied. It fails on its first statement once done.
+var droppedNotes = []string{
+	`ALTER TABLE watches DROP COLUMN note`,
+	`DELETE FROM watches WHERE NOT EXISTS (SELECT 1 FROM code_refs c WHERE c.watch_id = watches.id)`,
+	`DELETE FROM items WHERE NOT EXISTS (SELECT 1 FROM watches w WHERE w.item_id = items.id)`,
+	`UPDATE users SET api_token_hash = NULL`,
+}
+
+// migrateOnce runs qs in one transaction. It does nothing once they've run,
+// when the first fails for a column that's gone.
+func migrateOnce(db *sql.DB, qs []string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	for _, q := range movedTokens {
+	for _, q := range qs {
 		if _, err := tx.Exec(q); err != nil {
 			if strings.Contains(err.Error(), "no such column") {
 				return nil
@@ -184,8 +195,10 @@ func openDB(path string) (*DB, error) {
 			return nil, fmt.Errorf("migrate: %w", err)
 		}
 	}
-	if err := moveTokens(db); err != nil {
-		return nil, fmt.Errorf("migrate: %w", err)
+	for _, qs := range [][]string{movedTokens, droppedNotes} {
+		if err := migrateOnce(db, qs); err != nil {
+			return nil, fmt.Errorf("migrate: %w", err)
+		}
 	}
 	return &DB{db}, nil
 }
@@ -208,18 +221,17 @@ type User struct {
 	DigestHour      int
 	LastDigestDay   string
 	HasGitHubToken  bool
-	HasAPIToken     bool
 }
 
 const userCols = `id, google_sub, email, name, picture, tz, default_filter, default_delivery,
 	quiet_start, quiet_end, digest_hour, last_digest_day,
-	EXISTS (SELECT 1 FROM github_tokens t WHERE t.user_id = users.id), api_token_hash IS NOT NULL`
+	EXISTS (SELECT 1 FROM github_tokens t WHERE t.user_id = users.id)`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	u := &User{}
 	err := row.Scan(&u.ID, &u.GoogleSub, &u.Email, &u.Name, &u.Picture, &u.TZ, &u.DefaultFilter,
 		&u.DefaultDelivery, &u.QuietStart, &u.QuietEnd, &u.DigestHour, &u.LastDigestDay,
-		&u.HasGitHubToken, &u.HasAPIToken)
+		&u.HasGitHubToken)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errNotFound
 	}
@@ -228,10 +240,6 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 
 func (db *DB) UserByID(ctx context.Context, id int64) (*User, error) {
 	return scanUser(db.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE id = ?`, id))
-}
-
-func (db *DB) UserByAPITokenHash(ctx context.Context, h string) (*User, error) {
-	return scanUser(db.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE api_token_hash = ?`, h))
 }
 
 func (db *DB) UpsertGoogleUser(ctx context.Context, sub, email, name, picture string) (*User, error) {
@@ -263,11 +271,6 @@ func (db *DB) UpdateUserSettings(ctx context.Context, uid int64, s UserSettings)
 
 func (db *DB) SetUserTZ(ctx context.Context, uid int64, tz string) error {
 	_, err := db.ExecContext(ctx, `UPDATE users SET tz = ? WHERE id = ?`, tz, uid)
-	return err
-}
-
-func (db *DB) SetAPITokenHash(ctx context.Context, uid int64, h string) error {
-	_, err := db.ExecContext(ctx, `UPDATE users SET api_token_hash = ? WHERE id = ?`, h, uid)
 	return err
 }
 
@@ -388,12 +391,6 @@ func (db *DB) DueItems(ctx context.Context, now time.Time, limit int) ([]*Item, 
 		out = append(out, it)
 	}
 	return out, rows.Err()
-}
-
-// DeleteOrphanItems removes items nobody watches any more (and their events).
-func (db *DB) DeleteOrphanItems(ctx context.Context) error {
-	_, err := db.ExecContext(ctx, `DELETE FROM items WHERE NOT EXISTS (SELECT 1 FROM watches w WHERE w.item_id = items.id)`)
-	return err
 }
 
 // TokenCandidates returns GitHub tokens of users watching the item, those
@@ -582,7 +579,6 @@ type Watch struct {
 	ID              int64
 	UserID          int64
 	ItemID          int64
-	Note            string
 	Filter          string
 	Delivery        string
 	Status          string
@@ -595,25 +591,22 @@ type Watch struct {
 	Refs     []CodeRef // code comments that reference the item
 }
 
-// Why is what the user reads about why they watch the item: the note, then
-// each code comment that references it.
+// Why is what the user reads about why they watch the item: each code
+// comment that references it, linked to its line.
 func (w *Watch) Why() string {
 	var parts []string
-	if w.Note != "" {
-		parts = append(parts, w.Note)
-	}
 	for _, c := range w.Refs {
 		parts = append(parts, fmt.Sprintf("%s ([%s/%s:%d](%s))", c.Note, c.Repo, c.Path, c.Line, c.URL()))
 	}
 	return strings.Join(parts, "\n\n")
 }
 
-const watchCols = `w.id, w.user_id, w.item_id, w.note, w.filter, w.delivery, w.status, w.notified_event_id,
+const watchCols = `w.id, w.user_id, w.item_id, w.filter, w.delivery, w.status, w.notified_event_id,
 	w.viewed_event_id, w.created_at, (SELECT COUNT(*) FROM events e WHERE e.item_id = w.item_id AND e.id > w.viewed_event_id)`
 
 func scanWatch(row interface{ Scan(...any) error }, withItem bool) (*Watch, error) {
 	w := &Watch{}
-	dest := []any{&w.ID, &w.UserID, &w.ItemID, &w.Note, &w.Filter, &w.Delivery, &w.Status, &w.NotifiedEventID,
+	dest := []any{&w.ID, &w.UserID, &w.ItemID, &w.Filter, &w.Delivery, &w.Status, &w.NotifiedEventID,
 		&w.ViewedEventID, &w.CreatedAt, &w.NewCount}
 	if withItem {
 		w.Item = &Item{}
@@ -710,16 +703,15 @@ func (db *DB) UserWatchForItem(ctx context.Context, uid, itemID int64) (*Watch, 
 }
 
 // ListWatches returns a user's watches with the given status, most recently active first.
-// q, when set, matches titles, notes and repo names.
+// q, when set, matches titles, code comments and repo names.
 func (db *DB) ListWatches(ctx context.Context, uid int64, status, q string) ([]*Watch, error) {
 	where := `w.user_id = ? AND w.status = ?`
 	args := []any{uid, status}
 	if q = strings.TrimSpace(q); q != "" {
 		like := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(q)) + "%"
-		where += ` AND (lower(i.title) LIKE ? ESCAPE '\' OR lower(w.note) LIKE ? ESCAPE '\'
-			OR (i.owner || '/' || i.repo) LIKE ? ESCAPE '\'
+		where += ` AND (lower(i.title) LIKE ? ESCAPE '\' OR (i.owner || '/' || i.repo) LIKE ? ESCAPE '\'
 			OR EXISTS (SELECT 1 FROM code_refs c WHERE c.watch_id = w.id AND lower(c.note) LIKE ? ESCAPE '\'))`
-		args = append(args, like, like, like, like)
+		args = append(args, like, like, like)
 	}
 	return db.queryWatches(ctx, where+` ORDER BY MAX(i.last_activity, w.created_at) DESC`, args...)
 }
@@ -748,18 +740,13 @@ func (db *DB) WatchesWithPending(ctx context.Context) ([]*Watch, error) {
 }
 
 func (db *DB) InsertWatch(ctx context.Context, w *Watch) error {
-	res, err := db.ExecContext(ctx, `INSERT INTO watches (user_id, item_id, note, filter, delivery, status,
-		notified_event_id, viewed_event_id, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
-		w.UserID, w.ItemID, w.Note, w.Filter, w.Delivery, w.NotifiedEventID, w.ViewedEventID, w.CreatedAt)
+	res, err := db.ExecContext(ctx, `INSERT INTO watches (user_id, item_id, filter, delivery, status,
+		notified_event_id, viewed_event_id, created_at) VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
+		w.UserID, w.ItemID, w.Filter, w.Delivery, w.NotifiedEventID, w.ViewedEventID, w.CreatedAt)
 	if err != nil {
 		return err
 	}
 	w.ID, err = res.LastInsertId()
-	return err
-}
-
-func (db *DB) SetWatchNote(ctx context.Context, id int64, note string) error {
-	_, err := db.ExecContext(ctx, `UPDATE watches SET note = ? WHERE id = ?`, note, id)
 	return err
 }
 
@@ -789,16 +776,10 @@ func (db *DB) SetWatchViewed(ctx context.Context, id, eventID int64) error {
 	return err
 }
 
-func (db *DB) DeleteWatch(ctx context.Context, id int64) error {
-	if _, err := db.ExecContext(ctx, `DELETE FROM watches WHERE id = ?`, id); err != nil {
-		return err
-	}
-	return db.DeleteOrphanItems(ctx)
-}
-
 // ReplaceCodeRefs makes refs the complete set of code comments in repo for
 // the user's watches, except that watches in keep hold on to their current
-// refs from repo. Watches left with no note and no refs are deleted.
+// refs from repo. Watches left with no refs are deleted, then items no one
+// watches.
 func (db *DB) ReplaceCodeRefs(ctx context.Context, uid int64, repo string, refs []CodeRef, keep []int64) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -817,7 +798,7 @@ func (db *DB) ReplaceCodeRefs(ctx context.Context, uid int64, repo string, refs 
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM watches WHERE user_id = ? AND note = ''
+	if _, err := tx.ExecContext(ctx, `DELETE FROM watches WHERE user_id = ?
 		AND NOT EXISTS (SELECT 1 FROM code_refs c WHERE c.watch_id = watches.id)`, uid); err != nil {
 		return err
 	}

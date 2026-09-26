@@ -30,16 +30,11 @@ type pageData struct {
 	NewSince int64
 	Badge    string // Markdown for a PR description
 
-	// new watch
-	URL      string
-	Preview  *Item
-	Existing *Watch
-	Note     string
+	// notification preferences
 	Filter   string
 	Delivery string
 
 	// settings
-	APIToken     string
 	Saved        bool
 	GitHubTokens []*tokenCard
 
@@ -86,14 +81,9 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /docs/code-comments", a.handleCodeCommentDocs)
 
 	mux.HandleFunc("GET /items", a.withUser(a.handleList))
-	mux.HandleFunc("GET /items/new", a.withUser(a.handleNewForm))
-	mux.HandleFunc("POST /items", a.withUser(a.handleCreate))
 	mux.HandleFunc("GET /items/{id}", a.withUser(a.handleDetail))
-	mux.HandleFunc("POST /items/{id}/note", a.withUser(a.handleNote))
 	mux.HandleFunc("POST /items/{id}/prefs", a.withUser(a.handlePrefs))
 	mux.HandleFunc("POST /items/{id}/status", a.withUser(a.handleStatus))
-	mux.HandleFunc("POST /items/{id}/delete", a.withUser(a.handleDelete))
-	mux.HandleFunc("GET /share", a.withUser(a.handleShare))
 
 	mux.HandleFunc("GET /settings", a.withUser(a.handleSettings))
 	mux.HandleFunc("POST /settings", a.withUser(a.handleSettingsSave))
@@ -101,16 +91,10 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /settings/github", a.withUser(a.handleGitHubToken))
 	mux.HandleFunc("POST /settings/github/{id}/refresh", a.withUser(a.handleGitHubRefresh))
 	mux.HandleFunc("POST /settings/github/{id}/remove", a.withUser(a.handleGitHubRemove))
-	mux.HandleFunc("POST /settings/api-token", a.withUser(a.handleAPIToken))
 
 	mux.HandleFunc("GET /badge/{id}", a.handleBadge)
 	mux.HandleFunc("GET /e/{action}", a.handleEmailAction)
 	mux.HandleFunc("POST /e/{action}", a.handleEmailAction)
-
-	mux.HandleFunc("GET /api/watch", a.withAPIUser(a.apiLookup))
-	mux.HandleFunc("POST /api/watch", a.withAPIUser(a.apiCreate))
-	mux.HandleFunc("GET /watchnote.user.js", a.handleUserscript)
-	mux.Handle("/mcp", a.mcpHandler())
 
 	return securityHeaders(mux)
 }
@@ -412,46 +396,6 @@ func (a *App) handleDetail(w http.ResponseWriter, r *http.Request, u *User) {
 	a.render(w, 200, "items", d)
 }
 
-func (a *App) handleNewForm(w http.ResponseWriter, r *http.Request, u *User) {
-	d := a.page(u, "Watch · Watchnote")
-	d.URL = strings.TrimSpace(r.URL.Query().Get("url"))
-	if d.URL != "" {
-		ref, ok := parseRef(d.URL)
-		if !ok {
-			d.Error = "That doesn't look like a GitHub issue or pull request link."
-		} else {
-			d.URL = fmt.Sprintf("https://github.com/%s/%s/issues/%d", ref.Owner, ref.Repo, ref.Number)
-			if it, err := a.db.ItemByRef(r.Context(), ref.Owner, ref.Repo, ref.Number); err == nil {
-				if ex, err := a.db.UserWatchForItem(r.Context(), u.ID, it.ID); err == nil {
-					http.Redirect(w, r, fmt.Sprintf("/items/%d", ex.ID), http.StatusSeeOther)
-					return
-				}
-			}
-			p, err := a.Preview(r.Context(), u, ref)
-			d.Preview = p
-			if err != nil {
-				d.Error = previewError(err, u)
-			} else {
-				d.URL = d.Preview.HTMLURL
-			}
-		}
-	}
-	a.render(w, 200, "new", d)
-}
-
-func previewError(err error, u *User) string {
-	switch {
-	case errors.Is(err, errGHNotFound) && !u.HasGitHubToken:
-		return "GitHub says that doesn't exist. If it's in a private repo, add a GitHub token in Settings first."
-	case errors.Is(err, errGHNotFound):
-		return "GitHub says that doesn't exist, or none of your saved GitHub tokens can see it."
-	case errors.Is(err, errGHRateLimited):
-		return "We've hit GitHub's rate limit. Try again in a few minutes."
-	default:
-		return "Couldn't reach GitHub: " + err.Error()
-	}
-}
-
 func formFilter(r *http.Request) string {
 	var picked []string
 	for _, c := range categories {
@@ -470,62 +414,6 @@ func formDelivery(v string) string {
 		return "digest"
 	}
 	return "instant"
-}
-
-const maxNote = 2000
-
-func cleanNote(s string) string {
-	s = strings.TrimSpace(strings.ReplaceAll(s, "\r\n", "\n"))
-	if r := []rune(s); len(r) > maxNote {
-		s = string(r[:maxNote])
-	}
-	return s
-}
-
-func (a *App) handleCreate(w http.ResponseWriter, r *http.Request, u *User) {
-	d := a.page(u, "Watch · Watchnote")
-	d.URL = r.FormValue("url")
-	d.Note = cleanNote(r.FormValue("note"))
-	d.Filter = formFilter(r)
-	d.Delivery = formDelivery(r.FormValue("delivery"))
-	ref, ok := parseRef(d.URL)
-	switch {
-	case !ok:
-		d.Error = "That doesn't look like a GitHub issue or pull request link."
-	case d.Note == "":
-		d.Error = "Add a note about why you're watching this. It goes at the top of every email."
-	case d.Filter == "":
-		d.Error = "Pick at least one kind of update to be emailed about."
-	}
-	if d.Error == "" {
-		wt, _, err := a.AddWatch(r.Context(), u, ref, d.Note, d.Filter, d.Delivery)
-		if err == nil {
-			http.Redirect(w, r, fmt.Sprintf("/items/%d", wt.ID), http.StatusSeeOther)
-			return
-		}
-		d.Error = previewError(err, u)
-	}
-	if ok {
-		d.Preview, _ = a.Preview(r.Context(), u, ref)
-	}
-	a.render(w, 422, "new", d)
-}
-
-func (a *App) handleNote(w http.ResponseWriter, r *http.Request, u *User) {
-	wt := a.watchFromPath(w, r, u)
-	if wt == nil {
-		return
-	}
-	note := cleanNote(r.FormValue("note"))
-	if note == "" {
-		http.Error(w, "The note can't be empty.", 422)
-		return
-	}
-	if err := a.db.SetWatchNote(r.Context(), wt.ID, note); err != nil {
-		a.serverError(w, err)
-		return
-	}
-	http.Redirect(w, r, fmt.Sprintf("/items/%d", wt.ID), http.StatusSeeOther)
 }
 
 func (a *App) handlePrefs(w http.ResponseWriter, r *http.Request, u *User) {
@@ -556,31 +444,6 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request, u *User) {
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/items/%d", wt.ID), http.StatusSeeOther)
-}
-
-func (a *App) handleDelete(w http.ResponseWriter, r *http.Request, u *User) {
-	wt := a.watchFromPath(w, r, u)
-	if wt == nil {
-		return
-	}
-	if err := a.db.DeleteWatch(r.Context(), wt.ID); err != nil {
-		a.serverError(w, err)
-		return
-	}
-	http.Redirect(w, r, "/items?tab="+wt.Status, http.StatusSeeOther)
-}
-
-// handleShare receives links from the mobile share sheet (PWA share_target).
-func (a *App) handleShare(w http.ResponseWriter, r *http.Request, u *User) {
-	q := r.URL.Query()
-	for _, s := range []string{q.Get("url"), q.Get("text"), q.Get("title")} {
-		if ref, ok := parseRef(s); ok {
-			target := fmt.Sprintf("https://github.com/%s/%s/issues/%d", ref.Owner, ref.Repo, ref.Number)
-			http.Redirect(w, r, "/items/new?url="+url.QueryEscape(target), http.StatusSeeOther)
-			return
-		}
-	}
-	http.Redirect(w, r, "/items/new?url="+url.QueryEscape(q.Get("url")+q.Get("text")), http.StatusSeeOther)
 }
 
 // ---- settings ----
@@ -790,34 +653,18 @@ func (a *App) handleGitHubRemove(w http.ResponseWriter, r *http.Request, u *User
 	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
 }
 
-func (a *App) handleAPIToken(w http.ResponseWriter, r *http.Request, u *User) {
-	tok := "wn_" + randomToken(24)
-	if err := a.db.SetAPITokenHash(r.Context(), u.ID, hashToken(tok)); err != nil {
-		a.serverError(w, err)
-		return
-	}
-	u.HasAPIToken = true
-	d, err := a.settingsPage(r.Context(), u)
-	if err != nil {
-		a.serverError(w, err)
-		return
-	}
-	d.APIToken = tok
-	a.render(w, 200, "settings", d)
-}
-
 // ---- signed email actions (no login needed) ----
 
 var emailActions = map[string][2]string{
 	"mute":       {"Mute this item", "You'll stop getting emails about it. It stays in your Muted list and you can unmute it any time."},
 	"statusonly": {"Status changes only", "You'll only be emailed when it's merged, closed or reopened."},
-	"stop":       {"Stop watching", "It'll be removed from Watchnote along with your note."},
 	"done":       {"Mark as done", "It moves to your Done list. You'll hear about it again only if it's reopened."},
 }
 
 // handleEmailAction shows a confirmation page on GET (so link scanners that
 // prefetch emails can't trigger anything) and acts on POST. POST also serves
-// RFC 8058 one-click unsubscribe.
+// RFC 8058 one-click unsubscribe, which mutes: only deleting the code comment
+// stops a watch.
 func (a *App) handleEmailAction(w http.ResponseWriter, r *http.Request) {
 	action := r.PathValue("action")
 	text, known := emailActions[action]
@@ -832,7 +679,7 @@ func (a *App) handleEmailAction(w http.ResponseWriter, r *http.Request) {
 	wt, err := a.db.WatchByID(r.Context(), id)
 	if errors.Is(err, errNotFound) {
 		d.ActionDone = true
-		d.ActionDesc = "You're no longer watching this item."
+		d.ActionDesc = "You're no longer watching this item: the code comments that referenced it are gone."
 		a.render(w, 200, "action", d)
 		return
 	} else if err != nil {
@@ -849,8 +696,6 @@ func (a *App) handleEmailAction(w http.ResponseWriter, r *http.Request) {
 			err = a.db.SetWatchStatus(ctx, id, "done")
 		case "statusonly":
 			err = a.db.SetWatchPrefs(ctx, id, filterStatusOnly, wt.Delivery)
-		case "stop":
-			err = a.db.DeleteWatch(ctx, id)
 		}
 		if err != nil {
 			a.serverError(w, err)

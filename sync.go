@@ -23,7 +23,9 @@ import (
 // keeps octo/hello#7 watched for as long as the comment is on the default
 // branch. An added line in a patch file (`+  // octo/hello#7: …`) counts too.
 // Watchnote scans the repos a user's saved GitHub tokens can push to, again
-// whenever they're pushed to.
+// whenever they're pushed to. These comments are the only way to watch
+// anything: there's no note but theirs, and deleting the last comment that
+// references an item stops the watch.
 
 type CodeRef struct {
 	WatchID int64
@@ -57,6 +59,16 @@ func parseCodeRef(line string) (target Ref, note string, ok bool) {
 	}
 	n, _ := strconv.Atoi(m[3])
 	return Ref{m[1], m[2], n}, cleanNote(m[4]), n > 0
+}
+
+const maxNote = 2000
+
+func cleanNote(s string) string {
+	s = strings.TrimSpace(s)
+	if r := []rune(s); len(r) > maxNote {
+		s = string(r[:maxNote])
+	}
+	return s
 }
 
 // codeRefExamples are listed on /docs/code-comments. TestCodeRefExamples
@@ -359,7 +371,7 @@ func (a *App) SyncCodeRefs(ctx context.Context, u *User, repo string, refs []Cod
 		key := strings.ToLower(c.Target.String())
 		id, seen := watchIDs[key]
 		if !seen {
-			wt, _, err := a.AddWatch(ctx, u, c.Target, "", u.DefaultFilter, u.DefaultDelivery)
+			wt, _, err := a.AddWatch(ctx, u, c.Target, u.DefaultFilter, u.DefaultDelivery)
 			if err != nil {
 				failed = append(failed, fmt.Errorf("%s:%d: %s: %w", c.Path, c.Line, c.Target, err))
 				if it, err := a.db.ItemByRef(ctx, c.Target.Owner, c.Target.Repo, c.Target.Number); err == nil {

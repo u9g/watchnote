@@ -36,24 +36,6 @@
     sync();
   });
 
-  // Edit-note sheet. Emails link to /items/N#edit-note to open it directly.
-  const openDialog = (id) => {
-    const d = document.getElementById(id);
-    if (d && !d.open) {
-      d.showModal();
-      const ta = d.querySelector("textarea");
-      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
-    }
-  };
-  document.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openDialog(b.dataset.open)));
-  document.querySelectorAll("dialog [data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
-  document.querySelectorAll("dialog").forEach((d) =>
-    d.addEventListener("click", (e) => { if (e.target === d) d.close(); }),
-  );
-  const fromHash = () => location.hash.length > 1 && openDialog(location.hash.slice(1));
-  fromHash();
-  window.addEventListener("hashchange", fromHash);
-
   document.querySelectorAll("form[data-confirm]").forEach((f) =>
     f.addEventListener("submit", (e) => { if (!confirm(f.dataset.confirm)) e.preventDefault(); }),
   );
