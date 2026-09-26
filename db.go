@@ -828,9 +828,9 @@ func (db *DB) ReplaceCodeRefs(ctx context.Context, uid int64, repo string, refs 
 }
 
 type CodeRepo struct {
-	PushedAt     string
-	SHA          string
-	TokenID      int64   // the token that read it; 0 if none could
+	PushedAt string
+	SHA      string
+	TokenID  int64             // the token that read it; 0 if none could
 	Refusals map[int64]Refusal // by token id, as of PushedAt
 }
 
