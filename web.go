@@ -39,8 +39,10 @@ type pageData struct {
 	Delivery string
 
 	// settings
-	APIToken string
-	Saved    bool
+	APIToken     string
+	Saved        bool
+	GitHubTokens []*GitHubToken
+	CodeRepos    map[string]CodeRepo // scanned repos by lowercase owner/name
 
 	// email actions
 	Action      string
@@ -97,7 +99,8 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /settings", a.withUser(a.handleSettingsSave))
 	mux.HandleFunc("POST /settings/tz", a.withUser(a.handleSetTZ))
 	mux.HandleFunc("POST /settings/github", a.withUser(a.handleGitHubToken))
-	mux.HandleFunc("POST /settings/github/remove", a.withUser(a.handleGitHubRemove))
+	mux.HandleFunc("POST /settings/github/{id}/refresh", a.withUser(a.handleGitHubRefresh))
+	mux.HandleFunc("POST /settings/github/{id}/remove", a.withUser(a.handleGitHubRemove))
 	mux.HandleFunc("POST /settings/api-token", a.withUser(a.handleAPIToken))
 
 	mux.HandleFunc("GET /badge/{id}", a.handleBadge)
@@ -432,10 +435,10 @@ func (a *App) handleNewForm(w http.ResponseWriter, r *http.Request, u *User) {
 
 func previewError(err error, u *User) string {
 	switch {
-	case errors.Is(err, errGHNotFound) && u.GitHubToken == nil:
+	case errors.Is(err, errGHNotFound) && !u.HasGitHubToken:
 		return "GitHub says that doesn't exist. If it's in a private repo, add a GitHub token in Settings first."
 	case errors.Is(err, errGHNotFound):
-		return "GitHub says that doesn't exist, or your saved GitHub token can't see it."
+		return "GitHub says that doesn't exist, or none of your saved GitHub tokens can see it."
 	case errors.Is(err, errGHRateLimited):
 		return "We've hit GitHub's rate limit. Try again in a few minutes."
 	default:
@@ -577,10 +580,24 @@ func (a *App) handleShare(w http.ResponseWriter, r *http.Request, u *User) {
 // ---- settings ----
 
 func (a *App) handleSettings(w http.ResponseWriter, r *http.Request, u *User) {
-	d := a.page(u, "Settings · Watchnote")
+	d, err := a.settingsPage(r.Context(), u)
+	if err != nil {
+		a.serverError(w, err)
+		return
+	}
 	d.Saved = r.URL.Query().Get("saved") == "1"
 	d.Error = r.URL.Query().Get("error")
 	a.render(w, 200, "settings", d)
+}
+
+func (a *App) settingsPage(ctx context.Context, u *User) (*pageData, error) {
+	d := a.page(u, "Settings · Watchnote")
+	var err error
+	if d.GitHubTokens, err = a.db.GitHubTokens(ctx, u.ID); err != nil {
+		return nil, err
+	}
+	d.CodeRepos, err = a.db.CodeRepos(ctx, u.ID)
+	return d, err
 }
 
 func parseClock(s string) (sql.NullInt64, bool) {
@@ -638,25 +655,60 @@ func (a *App) handleSetTZ(w http.ResponseWriter, r *http.Request, u *User) {
 }
 
 func (a *App) handleGitHubToken(w http.ResponseWriter, r *http.Request, u *User) {
+	ctx := r.Context()
+	fail := func(msg string) { http.Redirect(w, r, "/settings?error="+url.QueryEscape(msg), http.StatusSeeOther) }
 	tok := strings.TrimSpace(r.FormValue("token"))
-	login, err := a.gh.Viewer(r.Context(), tok)
+	login, err := a.gh.Viewer(ctx, tok)
 	if tok == "" || err != nil {
-		http.Redirect(w, r, "/settings?error="+url.QueryEscape("GitHub didn't accept that token."), http.StatusSeeOther)
+		fail("GitHub didn't accept that token.")
 		return
 	}
-	sealed, err := a.keys.Seal(tok)
-	if err == nil {
-		err = a.db.SetGitHubToken(r.Context(), u.ID, sealed, login)
+	existing, err := a.db.GitHubTokens(ctx, u.ID)
+	if err != nil {
+		a.serverError(w, err)
+		return
+	}
+	for _, t := range existing {
+		if old, err := a.keys.Open(t.Sealed); err == nil && old == tok {
+			fail("That token is already saved.")
+			return
+		}
+	}
+	t := &GitHubToken{UserID: u.ID, Login: login, CreatedAt: a.now().Unix()}
+	if t.Sealed, err = a.keys.Seal(tok); err == nil {
+		err = a.db.InsertGitHubToken(ctx, t)
 	}
 	if err != nil {
 		a.serverError(w, err)
 		return
 	}
-	http.Redirect(w, r, "/settings?saved=1", http.StatusSeeOther)
+	// List its repos now so the page can show them. A failure is saved on the
+	// token and shown there, and the scanner tries again.
+	if _, _, err := a.listTokenRepos(ctx, t); err != nil {
+		a.log.Warn("listing a new token's repos failed", "user", u.ID, "err", err)
+	}
+	http.Redirect(w, r, fmt.Sprintf("/settings?saved=1#github-token-%d", t.ID), http.StatusSeeOther)
+}
+
+func (a *App) handleGitHubRefresh(w http.ResponseWriter, r *http.Request, u *User) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	t, err := a.db.UserGitHubToken(r.Context(), u.ID, id)
+	if errors.Is(err, errNotFound) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		a.serverError(w, err)
+		return
+	}
+	if _, _, err := a.listTokenRepos(r.Context(), t); err != nil {
+		a.log.Warn("listing a token's repos failed", "user", u.ID, "token", t.ID, "err", err)
+	}
+	http.Redirect(w, r, fmt.Sprintf("/settings#github-token-%d", t.ID), http.StatusSeeOther)
 }
 
 func (a *App) handleGitHubRemove(w http.ResponseWriter, r *http.Request, u *User) {
-	if err := a.db.SetGitHubToken(r.Context(), u.ID, nil, ""); err != nil {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err := a.db.DeleteGitHubToken(r.Context(), u.ID, id); err != nil {
 		a.serverError(w, err)
 		return
 	}
@@ -670,7 +722,11 @@ func (a *App) handleAPIToken(w http.ResponseWriter, r *http.Request, u *User) {
 		return
 	}
 	u.HasAPIToken = true
-	d := a.page(u, "Settings · Watchnote")
+	d, err := a.settingsPage(r.Context(), u)
+	if err != nil {
+		a.serverError(w, err)
+		return
+	}
 	d.APIToken = tok
 	a.render(w, 200, "settings", d)
 }

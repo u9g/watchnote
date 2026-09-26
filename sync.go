@@ -21,7 +21,7 @@ import (
 //
 // keeps octo/hello#7 watched for as long as the comment is on the default
 // branch. An added line in a patch file (`+  // octo/hello#7: …`) counts too.
-// Watchnote scans the repos a user's saved GitHub token can push to, again
+// Watchnote scans the repos a user's saved GitHub tokens can push to, again
 // whenever they're pushed to.
 
 type CodeRef struct {
@@ -100,7 +100,7 @@ func scanTarball(r io.Reader, repo, sha string) ([]CodeRef, error) {
 }
 
 // scanCode rescans every repo pushed to since its last scan, for each user
-// with a GitHub token, and drops refs from repos the token no longer reaches.
+// with a GitHub token, and drops refs from repos no token reaches any more.
 func (a *App) scanCode(ctx context.Context) error {
 	users, err := a.db.AllUsers(ctx)
 	if err != nil {
@@ -117,33 +117,59 @@ func (a *App) scanCode(ctx context.Context) error {
 	return nil
 }
 
+// listTokenRepos asks GitHub which repos t can see and saves the answer. When
+// GitHub doesn't answer, it saves why and t keeps its last list.
+func (a *App) listTokenRepos(ctx context.Context, t *GitHubToken) (token string, repos []ghRepo, err error) {
+	if token, err = a.keys.Open(t.Sealed); err != nil {
+		return "", nil, err
+	}
+	if repos, err = a.gh.UserRepos(ctx, token); err != nil {
+		t.ListError = err.Error()
+		return "", nil, errors.Join(err, a.db.SetTokenListError(ctx, t.ID, t.ListError))
+	}
+	t.Repos, t.ListedAt, t.ListError = nil, a.now().Unix(), ""
+	for _, r := range repos {
+		t.Repos = append(t.Repos, TokenRepo{Name: r.FullName, Private: r.Private, Scan: r.scannable()})
+	}
+	return token, repos, a.db.SetTokenRepos(ctx, t.ID, t.Repos, t.ListedAt)
+}
+
 func (a *App) scanUserCode(ctx context.Context, u *User) error {
-	var repos []ghRepo
-	var token string
-	if u.GitHubToken != nil {
-		var err error
-		if token, err = a.keys.Open(u.GitHubToken); err != nil {
-			return err
-		}
-		if repos, err = a.gh.PushableRepos(ctx, token); err != nil {
-			return err
-		}
+	tokens, err := a.db.GitHubTokens(ctx, u.ID)
+	if err != nil {
+		return err
 	}
 	scanned, err := a.db.CodeRepos(ctx, u.ID)
 	if err != nil {
 		return err
 	}
-	listed := map[string]bool{}
+	listed := map[string]bool{}  // repos to keep refs from
+	covered := map[string]bool{} // repos an earlier token scans
 	scans := 0
-	for _, r := range repos {
-		name := strings.ToLower(r.FullName)
-		listed[name] = true
-		if scanned[name].PushedAt == r.PushedAt || scans == maxScansPerCycle {
+	for _, t := range tokens {
+		token, repos, err := a.listTokenRepos(ctx, t)
+		if err != nil {
+			// Hold on to refs from the repos it listed before, so a GitHub outage
+			// doesn't drop watches.
+			a.log.Error("listing a token's repos failed", "user", u.ID, "token", t.ID, "err", err)
+			for _, r := range t.Scanned() {
+				listed[r.Key()] = true
+			}
 			continue
 		}
-		scans++
-		if err := a.scanRepo(ctx, u, token, name, r, scanned[name].SHA); err != nil {
-			a.log.Error("repo scan failed", "user", u.ID, "repo", name, "err", err)
+		for _, r := range repos {
+			name := strings.ToLower(r.FullName)
+			if !r.scannable() || covered[name] {
+				continue
+			}
+			listed[name], covered[name] = true, true
+			if scanned[name].PushedAt == r.PushedAt || scans == maxScansPerCycle {
+				continue
+			}
+			scans++
+			if err := a.scanRepo(ctx, u, token, name, r, scanned[name].SHA); err != nil {
+				a.log.Error("repo scan failed", "user", u.ID, "repo", name, "err", err)
+			}
 		}
 	}
 	for name := range scanned {

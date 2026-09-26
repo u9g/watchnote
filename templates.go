@@ -99,6 +99,14 @@ var funcs = map[string]any{
 		}
 		return h
 	},
+	"join": strings.Join,
+	"sub":  func(a, b int) int { return a - b },
+	"plural": func(n int, one, many string) string {
+		if n == 1 {
+			return one
+		}
+		return many
+	},
 	"hourLabel": func(h int) string { return time.Date(2000, 1, 1, h, 0, 0, 0, time.UTC).Format("3 PM") },
 	"initial": func(s string) string {
 		if s == "" {

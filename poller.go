@@ -33,12 +33,12 @@ func (a *App) itemToken(ctx context.Context, it *Item) (string, error) {
 	if !it.Private {
 		return "", nil
 	}
-	sealed, err := a.db.TokenCandidates(ctx, it)
+	tokens, err := a.db.TokenCandidates(ctx, it)
 	if err != nil {
 		return "", err
 	}
-	for _, s := range sealed {
-		if tok, err := a.keys.Open(s); err == nil {
+	for _, t := range tokens {
+		if tok, err := a.keys.Open(t.Sealed); err == nil {
 			return tok, nil
 		}
 	}
@@ -202,17 +202,26 @@ func (a *App) syncTimeline(ctx context.Context, it *Item, token string, now time
 // ---- adding watches ----
 
 // fetchSnapshot reads an item not yet in the database, falling back to the
-// user's own GitHub token for private repos.
+// user's own GitHub tokens for private repos.
 func (a *App) fetchSnapshot(ctx context.Context, u *User, r Ref) (snap *Snapshot, etag string, private bool, token string, err error) {
 	snap, etag, _, err = a.gh.FetchItem(ctx, r, "", "", "")
-	if errors.Is(err, errGHNotFound) && u.GitHubToken != nil {
-		if token, err = a.keys.Open(u.GitHubToken); err != nil {
+	if !errors.Is(err, errGHNotFound) {
+		return snap, etag, false, "", err
+	}
+	tokens, terr := a.db.GitHubTokensFor(ctx, u.ID, r.Owner+"/"+r.Repo)
+	if terr != nil {
+		return nil, "", false, "", terr
+	}
+	for _, t := range tokens {
+		if token, err = a.keys.Open(t.Sealed); err != nil {
 			return nil, "", false, "", err
 		}
 		snap, etag, _, err = a.gh.FetchItem(ctx, r, "", token, "")
-		private = true
+		if !errors.Is(err, errGHNotFound) {
+			return snap, etag, true, token, err
+		}
 	}
-	return snap, etag, private, token, err
+	return nil, "", false, "", err
 }
 
 // Preview describes an item for the "watch" form without storing anything.
