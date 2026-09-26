@@ -28,7 +28,8 @@ watching it.
 - A userscript adds a **Watch with note** button to GitHub issue and PR pages.
 - A code comment like `// owner/repo#123: why` keeps that item watched until the
   comment is deleted from your repo.
-- Private repos work if you save a read-only fine-grained GitHub token in Settings.
+- Private repos work if you save read-only fine-grained GitHub tokens in Settings, one
+  per account or organization.
 
 It's a single Go binary with server-rendered HTML and SQLite. It works on phones
 and desktops and installs as a PWA.
@@ -145,9 +146,11 @@ When code exists because of an issue or PR, say so in a comment on its own line 
 it, like `// octo/hello#7: Retry until shutdown stops racing; delete once this is fixed.`
 Any comment works (`//`, `//!`, `#`, `--`, `;`, `%`, `/* */`, `<!-- -->` and so on), as
 does a line of its own inside a docstring: what counts is a line that starts with
-`owner/repo#N: ` once any leading punctuation is set aside. With a GitHub token saved in
-Settings, Watchnote reads the default branch of every repo the token can push to
-(forks aside), again after each push, and watches every item referenced this way. The
+`owner/repo#N: ` once any leading punctuation is set aside. With GitHub tokens saved in
+Settings, Watchnote reads the default branch of every repo they can see and you can push
+to (forks aside), again after each push, and watches every item referenced this way.
+A fine-grained token covers one account or organization, so add one per owner;
+Settings lists the repos each token scans. The
 comment, linked to its line, is shown as the note. When a comment is deleted, its
 reference goes too, and a watch left with no references and no note of its own
 stops. For private repos, the token needs read-only **Contents** access.

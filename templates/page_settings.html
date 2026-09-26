@@ -40,27 +40,68 @@
       <button class="btn primary">Save settings</button>
     </form>
 
-    <div class="field-label">GitHub</div>
-    <div class="card stack">
-      {{if .User.GitHubLogin}}
-        <div>Using a GitHub token for <b>@{{.User.GitHubLogin}}</b>. Comments like
-          <code class="mono">// owner/repo#123: why</code> in repos it can push to keep those items watched.</div>
-        <form method="post" action="/settings/github/remove">
-          <input type="hidden" name="csrf" value="{{.CSRF}}">
-          <button class="btn">Remove token</button>
-        </form>
-      {{else}}
-        <div>Public issues and PRs work without this. To watch items in private repos, paste a
-          <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>
-          with read-only <b>Issues</b>, <b>Pull requests</b> and <b>Metadata</b> access to those repos.
-          It also lets comments like <code class="mono">// owner/repo#123: why</code> in your repos keep those items
-          watched; for private repos, add read-only <b>Contents</b>.</div>
+    <div class="field-label">GitHub tokens</div>
+    <div class="stack">
+      {{range .GitHubTokens}}{{$scan := .Scanned}}
+      <div class="card stack" id="github-token-{{.ID}}">
+        <div class="token-head">
+          <div>
+            <b>{{with .Owners}}{{join . ", "}}{{else}}@{{.Login}}{{end}}</b>
+            <div class="muted small">Token for @{{.Login}} · repos checked {{ago .ListedAt}}</div>
+          </div>
+          <div class="row">
+            <form method="post" action="/settings/github/{{.ID}}/refresh">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <button class="btn ghost">Check again</button>
+            </form>
+            <form method="post" action="/settings/github/{{.ID}}/remove"
+              data-confirm="Remove this token? Comments in the repos only it covers will stop keeping items watched.">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <button class="btn ghost danger-text">Remove</button>
+            </form>
+          </div>
+        </div>
+        {{if .ListError}}<div class="warn">GitHub didn't list this token's repos: {{.ListError}}
+          Until it does, comments in the repos below keep their items watched.</div>{{end}}
+        {{if $scan}}
+          <div>Scans <b>{{len $scan}} {{plural (len $scan) "repo" "repos"}}</b> for comments like
+            <code class="mono">// owner/repo#123: why</code>:</div>
+          {{if gt (len $scan) 8}}<input class="input" type="search" placeholder="Filter repos" data-filter="#repos-{{.ID}}" hidden>{{end}}
+          <ul class="repo-list" id="repos-{{.ID}}">
+            {{range $scan}}{{$c := index $.CodeRepos .Key}}
+            <li data-name="{{.Key}}">
+              <a href="https://github.com/{{.Name}}" target="_blank" rel="noopener">{{.Name}}</a>
+              {{if .Private}}<span class="tag">private</span>{{end}}
+              <span class="muted small">{{if $c.SHA}}scanned{{else if $c.PushedAt}}can't read its code{{else}}not scanned yet{{end}}</span>
+            </li>{{end}}
+          </ul>
+        {{else if .ListedAt}}
+          <div>Scans no repos: it can't see any repo you can push to.</div>
+        {{end}}
+        {{with $n := sub (len .Repos) (len $scan)}}<div class="muted small">It can also read {{$n}} {{plural $n "repo" "repos"}}
+          you can't push to, or forks. Their issues and PRs can be watched, but their code isn't scanned.</div>{{end}}
+      </div>
+      {{end}}
+
+      <div class="card stack">
+        {{if .GitHubTokens}}
+          <div><b>Add a token for another account or organization.</b> A fine-grained token covers
+            the repos of one owner, so add one for each.</div>
+        {{else}}
+          <div>Public issues and PRs work without a token. To watch items in private repos, and to let comments like
+            <code class="mono">// owner/repo#123: why</code> in your code keep items watched, add a
+            <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>.
+            A fine-grained token covers the repos of one account or organization, so add one for each.</div>
+        {{end}}
+        <div class="small muted">Give it read-only <b>Issues</b>, <b>Pull requests</b> and <b>Metadata</b> access.
+          Watchnote scans the code of every repo it can see that you can push to, forks aside; for private repos,
+          add read-only <b>Contents</b> too. You'll see the list here once it's saved.</div>
         <form class="paste" method="post" action="/settings/github">
           <input type="hidden" name="csrf" value="{{.CSRF}}">
           <input class="input" type="password" name="token" placeholder="github_pat_…" autocomplete="off" required>
-          <button class="btn">Save</button>
+          <button class="btn">Add token</button>
         </form>
-      {{end}}
+      </div>
     </div>
 
     <div class="field-label">Personal token</div>

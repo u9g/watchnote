@@ -26,8 +26,6 @@ CREATE TABLE IF NOT EXISTS users (
 	quiet_end        INTEGER,
 	digest_hour      INTEGER NOT NULL DEFAULT 8,
 	last_digest_day  TEXT NOT NULL DEFAULT '', -- YYYY-MM-DD in the user's tz
-	github_token     BLOB,                 -- AES-GCM sealed
-	github_login     TEXT NOT NULL DEFAULT '',
 	api_token_hash   TEXT UNIQUE,
 	created_at       INTEGER NOT NULL
 );
@@ -107,7 +105,21 @@ CREATE TABLE IF NOT EXISTS code_repos (
 	PRIMARY KEY (user_id, repo)
 );
 
+-- A user's GitHub tokens. A fine-grained token covers one account or
+-- organization, so a user may need several.
+CREATE TABLE IF NOT EXISTS github_tokens (
+	id         INTEGER PRIMARY KEY,
+	user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	token      BLOB NOT NULL,                -- AES-GCM sealed
+	login      TEXT NOT NULL,                -- the GitHub user it belongs to
+	repos      TEXT NOT NULL DEFAULT '[]',   -- JSON []TokenRepo, as of listed_at
+	listed_at  INTEGER NOT NULL DEFAULT 0,
+	list_error TEXT NOT NULL DEFAULT '',     -- why the last listing failed, if it did
+	created_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS events_item ON events(item_id, id);
+CREATE INDEX IF NOT EXISTS github_tokens_user ON github_tokens(user_id);
 CREATE INDEX IF NOT EXISTS items_poll ON items(next_poll_at);
 CREATE INDEX IF NOT EXISTS watches_item ON watches(item_id);
 CREATE INDEX IF NOT EXISTS code_refs_watch ON code_refs(watch_id);
@@ -118,6 +130,32 @@ var addedColumns = []string{
 	`ALTER TABLE items ADD COLUMN merge_sha TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE items ADD COLUMN release_etag TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE items ADD COLUMN released_in TEXT NOT NULL DEFAULT ''`,
+}
+
+// movedTokens moves each user's one GitHub token into github_tokens, from
+// before a user could save several. It fails on its first statement once done.
+var movedTokens = []string{
+	`INSERT INTO github_tokens (user_id, token, login, created_at)
+		SELECT id, github_token, github_login, created_at FROM users WHERE github_token IS NOT NULL`,
+	`ALTER TABLE users DROP COLUMN github_token`,
+	`ALTER TABLE users DROP COLUMN github_login`,
+}
+
+func moveTokens(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range movedTokens {
+		if _, err := tx.Exec(q); err != nil {
+			if strings.Contains(err.Error(), "no such column") {
+				return nil
+			}
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 type DB struct{ *sql.DB }
@@ -142,6 +180,9 @@ func openDB(path string) (*DB, error) {
 			return nil, fmt.Errorf("migrate: %w", err)
 		}
 	}
+	if err := moveTokens(db); err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
 	return &DB{db}, nil
 }
 
@@ -162,19 +203,19 @@ type User struct {
 	QuietEnd        sql.NullInt64
 	DigestHour      int
 	LastDigestDay   string
-	GitHubToken     []byte
-	GitHubLogin     string
+	HasGitHubToken  bool
 	HasAPIToken     bool
 }
 
 const userCols = `id, google_sub, email, name, picture, tz, default_filter, default_delivery,
-	quiet_start, quiet_end, digest_hour, last_digest_day, github_token, github_login, api_token_hash IS NOT NULL`
+	quiet_start, quiet_end, digest_hour, last_digest_day,
+	EXISTS (SELECT 1 FROM github_tokens t WHERE t.user_id = users.id), api_token_hash IS NOT NULL`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	u := &User{}
 	err := row.Scan(&u.ID, &u.GoogleSub, &u.Email, &u.Name, &u.Picture, &u.TZ, &u.DefaultFilter,
 		&u.DefaultDelivery, &u.QuietStart, &u.QuietEnd, &u.DigestHour, &u.LastDigestDay,
-		&u.GitHubToken, &u.GitHubLogin, &u.HasAPIToken)
+		&u.HasGitHubToken, &u.HasAPIToken)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, errNotFound
 	}
@@ -218,11 +259,6 @@ func (db *DB) UpdateUserSettings(ctx context.Context, uid int64, s UserSettings)
 
 func (db *DB) SetUserTZ(ctx context.Context, uid int64, tz string) error {
 	_, err := db.ExecContext(ctx, `UPDATE users SET tz = ? WHERE id = ?`, tz, uid)
-	return err
-}
-
-func (db *DB) SetGitHubToken(ctx context.Context, uid int64, sealed []byte, login string) error {
-	_, err := db.ExecContext(ctx, `UPDATE users SET github_token = ?, github_login = ? WHERE id = ?`, sealed, login, uid)
 	return err
 }
 
@@ -356,24 +392,133 @@ func (db *DB) DeleteOrphanItems(ctx context.Context) error {
 	return err
 }
 
-// TokenCandidates returns sealed GitHub tokens of users watching the item,
-// preferring the user recorded on the item.
-func (db *DB) TokenCandidates(ctx context.Context, it *Item) ([][]byte, error) {
-	rows, err := db.QueryContext(ctx, `SELECT u.github_token FROM watches w JOIN users u ON u.id = w.user_id
-		WHERE w.item_id = ? AND u.github_token IS NOT NULL ORDER BY (u.id = ?) DESC`, it.ID, it.TokenUserID)
+// TokenCandidates returns GitHub tokens of users watching the item, those
+// that listed its repo first, then the user recorded on the item's.
+func (db *DB) TokenCandidates(ctx context.Context, it *Item) ([]*GitHubToken, error) {
+	return db.queryTokens(ctx, `JOIN watches w ON w.user_id = t.user_id WHERE w.item_id = ?
+		ORDER BY `+listsRepo+` DESC, (t.user_id = ?) DESC, t.id`, it.ID, it.Owner+"/"+it.Repo, it.TokenUserID)
+}
+
+// ---- GitHub tokens ----
+
+type GitHubToken struct {
+	ID        int64
+	UserID    int64
+	Sealed    []byte
+	Login     string
+	Repos     []TokenRepo
+	ListedAt  int64
+	ListError string
+	CreatedAt int64
+}
+
+// TokenRepo is a repo a token can see.
+type TokenRepo struct {
+	Name    string `json:"name"` // owner/name as GitHub spells it
+	Private bool   `json:"private,omitempty"`
+	Scan    bool   `json:"scan,omitempty"` // its user can push to it and it isn't a fork, so its code is scanned
+}
+
+func (r TokenRepo) Key() string { return strings.ToLower(r.Name) }
+
+// Scanned is the repos whose code the token's scans cover.
+func (t *GitHubToken) Scanned() []TokenRepo {
+	var out []TokenRepo
+	for _, r := range t.Repos {
+		if r.Scan {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// Owners names the accounts and organizations whose repos the token can see.
+func (t *GitHubToken) Owners() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, r := range t.Repos {
+		owner, _, _ := strings.Cut(r.Name, "/")
+		if !seen[strings.ToLower(owner)] {
+			seen[strings.ToLower(owner)] = true
+			out = append(out, owner)
+		}
+	}
+	return out
+}
+
+const tokenCols = `t.id, t.user_id, t.token, t.login, t.repos, t.listed_at, t.list_error, t.created_at`
+
+// listsRepo is true for tokens whose last listing included the repo in the
+// query argument (lowercase owner/name).
+const listsRepo = `EXISTS (SELECT 1 FROM json_each(t.repos) r WHERE lower(json_extract(r.value, '$.name')) = ?)`
+
+func (db *DB) queryTokens(ctx context.Context, rest string, args ...any) ([]*GitHubToken, error) {
+	rows, err := db.QueryContext(ctx, `SELECT `+tokenCols+` FROM github_tokens t `+rest, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out [][]byte
+	var out []*GitHubToken
 	for rows.Next() {
-		var b []byte
-		if err := rows.Scan(&b); err != nil {
+		t := &GitHubToken{}
+		var repos string
+		if err := rows.Scan(&t.ID, &t.UserID, &t.Sealed, &t.Login, &repos, &t.ListedAt, &t.ListError, &t.CreatedAt); err != nil {
 			return nil, err
 		}
-		out = append(out, b)
+		if err := json.Unmarshal([]byte(repos), &t.Repos); err != nil {
+			return nil, fmt.Errorf("token %d repos: %w", t.ID, err)
+		}
+		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// GitHubTokens returns a user's tokens, oldest first.
+func (db *DB) GitHubTokens(ctx context.Context, uid int64) ([]*GitHubToken, error) {
+	return db.queryTokens(ctx, `WHERE t.user_id = ? ORDER BY t.id`, uid)
+}
+
+// GitHubTokensFor returns a user's tokens, those that listed repo (owner/name) first.
+func (db *DB) GitHubTokensFor(ctx context.Context, uid int64, repo string) ([]*GitHubToken, error) {
+	return db.queryTokens(ctx, `WHERE t.user_id = ? ORDER BY `+listsRepo+` DESC, t.id`, uid, strings.ToLower(repo))
+}
+
+func (db *DB) UserGitHubToken(ctx context.Context, uid, id int64) (*GitHubToken, error) {
+	ts, err := db.queryTokens(ctx, `WHERE t.user_id = ? AND t.id = ?`, uid, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(ts) == 0 {
+		return nil, errNotFound
+	}
+	return ts[0], nil
+}
+
+func (db *DB) InsertGitHubToken(ctx context.Context, t *GitHubToken) error {
+	res, err := db.ExecContext(ctx, `INSERT INTO github_tokens (user_id, token, login, created_at) VALUES (?, ?, ?, ?)`,
+		t.UserID, t.Sealed, t.Login, t.CreatedAt)
+	if err != nil {
+		return err
+	}
+	t.ID, err = res.LastInsertId()
+	return err
+}
+
+func (db *DB) SetTokenRepos(ctx context.Context, id int64, repos []TokenRepo, listedAt int64) error {
+	b, _ := json.Marshal(append([]TokenRepo{}, repos...))
+	_, err := db.ExecContext(ctx, `UPDATE github_tokens SET repos = ?, listed_at = ?, list_error = '' WHERE id = ?`,
+		string(b), listedAt, id)
+	return err
+}
+
+func (db *DB) SetTokenListError(ctx context.Context, id int64, msg string) error {
+	_, err := db.ExecContext(ctx, `UPDATE github_tokens SET list_error = ? WHERE id = ?`, msg, id)
+	return err
+}
+
+func (db *DB) DeleteGitHubToken(ctx context.Context, uid, id int64) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM github_tokens WHERE user_id = ? AND id = ?`, uid, id)
+	return err
 }
 
 // ---- events ----

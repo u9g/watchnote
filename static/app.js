@@ -57,6 +57,15 @@
   document.querySelectorAll("form[data-confirm]").forEach((f) =>
     f.addEventListener("submit", (e) => { if (!confirm(f.dataset.confirm)) e.preventDefault(); }),
   );
+  // Filter boxes over long lists, like a token's repos in Settings.
+  document.querySelectorAll("[data-filter]").forEach((input) => {
+    const items = [...document.querySelector(input.dataset.filter).children];
+    input.hidden = false;
+    input.addEventListener("input", () => {
+      const q = input.value.trim().toLowerCase();
+      items.forEach((li) => (li.hidden = !li.dataset.name.includes(q)));
+    });
+  });
   document.querySelectorAll("[data-select]").forEach((i) => i.addEventListener("focus", () => i.select()));
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");

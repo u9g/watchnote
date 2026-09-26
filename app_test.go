@@ -28,10 +28,13 @@ type fakeGitHub struct {
 	release  string          // latest release tag, "" for none
 	inTag    map[string]bool // tags containing the merge commit
 
-	// Repos for /user/repos; me/app's default branch is at sha with files code.
-	repos []map[string]any
-	sha   string
-	code  map[string]string
+	// Repos for /user/repos, by token where reposFor has it; me/app's default
+	// branch is at sha with files code. Listing fails for tokens in down.
+	repos    []map[string]any
+	reposFor map[string][]map[string]any
+	down     map[string]bool
+	sha      string
+	code     map[string]string
 }
 
 func (f *fakeGitHub) add(ev map[string]any) {
@@ -98,7 +101,14 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/user":
 		json.NewEncoder(w).Encode(map[string]string{"login": "octocat"})
 	case "/user/repos":
-		json.NewEncoder(w).Encode(f.repos)
+		tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if rs, ok := f.reposFor[tok]; ok {
+			json.NewEncoder(w).Encode(rs)
+		} else if f.down[tok] {
+			w.WriteHeader(502)
+		} else {
+			json.NewEncoder(w).Encode(f.repos)
+		}
 	case "/repos/me/app/git/ref/heads/main":
 		json.NewEncoder(w).Encode(map[string]any{"object": map[string]string{"sha": f.sha}})
 	case "/repos/me/private/git/ref/heads/main":

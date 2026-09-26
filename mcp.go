@@ -115,7 +115,7 @@ func (a *App) mcpServer(u *User) *mcp.Server {
 			"Markdown note saying why the user cares; read it before acting on a watch, and write one that will make sense " +
 			"to them months later when adding a watch. If the reason is code in a git repo, don't call watch: add a comment " +
 			"on its own line above that code, like `// owner/repo#123: why this code depends on it`. Watchnote scans " +
-			"the repos the user's saved GitHub token can push to, and deleting the comment stops the watch. Every watch has a " +
+			"the repos the user's saved GitHub tokens can see and push to (Settings lists them), and deleting the comment stops the watch. Every watch has a " +
 			"done_badge: Markdown for a badge showing whether the user is done with it, for a PR description.",
 	})
 	own := func(ctx context.Context, id int64) (*Watch, error) {

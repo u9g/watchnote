@@ -239,14 +239,19 @@ type ghRepo struct {
 	FullName      string `json:"full_name"`
 	DefaultBranch string `json:"default_branch"`
 	PushedAt      string `json:"pushed_at"`
+	Private       bool   `json:"private"`
 	Fork          bool   `json:"fork"`
 	Permissions   struct {
 		Push bool `json:"push"`
 	} `json:"permissions"`
 }
 
-// PushableRepos lists the repos token can see that its user can push to, forks aside.
-func (g *GitHub) PushableRepos(ctx context.Context, token string) ([]ghRepo, error) {
+// scannable reports whether Watchnote scans the repo's code: its user can
+// push to it, and it isn't a fork.
+func (r ghRepo) scannable() bool { return r.Permissions.Push && !r.Fork }
+
+// UserRepos lists the repos token can see.
+func (g *GitHub) UserRepos(ctx context.Context, token string) ([]ghRepo, error) {
 	var out []ghRepo
 	for page := 1; page <= 20; page++ {
 		var rs []ghRepo
@@ -254,11 +259,7 @@ func (g *GitHub) PushableRepos(ctx context.Context, token string) ([]ghRepo, err
 		if err != nil {
 			return nil, err
 		}
-		for _, r := range rs {
-			if r.Permissions.Push && !r.Fork {
-				out = append(out, r)
-			}
-		}
+		out = append(out, rs...)
 		if !next {
 			break
 		}
