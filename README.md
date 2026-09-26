@@ -2,8 +2,10 @@
 
 A hosted instance is available at [watchnote.u9g.dev](https://watchnote.u9g.dev).
 
-New here? Watch the [70-second explainer](https://claude.ai/artifact/D9PFixkmJYaPx74xWX2Zbw) (with sound;
-source in [`docs/explainer.html`](docs/explainer.html)).
+<video src="https://github.com/u9g/watchnote/raw/claude/watchnote-explainer-video-ambpfl/docs/explainer.mp4" controls width="100%"></video>
+
+A 70-second explainer, with sound. It's rendered from [`docs/explainer.html`](docs/explainer.html),
+which also plays in a browser.
 
 When code exists because of a GitHub issue or pull request, say so in a comment:
 

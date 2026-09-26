@@ -553,11 +553,12 @@ function render(t) {
 }
 
 // ---------- audio ----------
-let ac = null, master, sfx, music, noiseBuf, muted = false;
-function initAudio() {
-  if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
-  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-  ac = new AC();
+let ac = null, master, sfx, music, noiseBuf, muted = false, at = null;
+const now = () => at ?? ac.currentTime;
+function initAudio(ctx) {
+  if (ac && !ctx) { if (ac.state === 'suspended') ac.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC && !ctx) return;
+  ac = ctx || new AC();
   master = ac.createGain(); master.gain.value = muted ? 0 : .9;
   const comp = ac.createDynamicsCompressor(); master.connect(comp); comp.connect(ac.destination);
   sfx = ac.createGain(); sfx.gain.value = 1; sfx.connect(master);
@@ -567,7 +568,7 @@ function initAudio() {
 }
 function tone(f, dur, o = {}) {
   const { type = 'sine', gain = .15, attack = .006, when = 0, slide, dest = sfx } = o;
-  const t0 = ac.currentTime + when;
+  const t0 = now() + when;
   const osc = ac.createOscillator(), g = ac.createGain();
   osc.type = type; osc.frequency.setValueAtTime(f, t0);
   if (slide) osc.frequency.exponentialRampToValueAtTime(slide, t0 + dur);
@@ -576,7 +577,7 @@ function tone(f, dur, o = {}) {
 }
 function noise(dur, o = {}) {
   const { gain = .15, type = 'bandpass', freq = 1000, to, q = 1, when = 0, attack = .005 } = o;
-  const t0 = ac.currentTime + when;
+  const t0 = now() + when;
   const src = ac.createBufferSource(); src.buffer = noiseBuf;
   const fl = ac.createBiquadFilter(); fl.type = type; fl.Q.value = q; fl.frequency.setValueAtTime(freq, t0);
   if (to) fl.frequency.exponentialRampToValueAtTime(to, t0 + dur);
@@ -606,7 +607,7 @@ const SND = {
 const CHORDS = [[261.63, 329.63, 392, 493.88], [220, 261.63, 329.63, 392], [174.61, 220, 261.63, 329.63], [196, 246.94, 293.66, 392]];
 function musicChord(i, level) {
   const ch = CHORDS[i % 4];
-  const t0 = ac.currentTime;
+  const t0 = now();
   const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.connect(music);
   ch.forEach(f => {
     const o = ac.createOscillator(), g = ac.createGain(); o.type = 'triangle'; o.frequency.value = f; o.detune.value = (Math.random() - .5) * 8;
@@ -711,5 +712,20 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// Hooks for rendering the explainer to a video file offline.
+window.watchnoteExplainer = {
+  duration: T,
+  frame(x) { started = true; big.hidden = true; t = x; render(x); },
+  async soundtrack(rate = 48000) {
+    const saved = [ac, master, sfx, music, noiseBuf];
+    initAudio(new OfflineAudioContext(2, Math.ceil(rate * T), rate));
+    for (const c of CUES) { at = c.t; try { c.fn(); } catch (e) {} }
+    at = null;
+    const buf = await ac.startRendering();
+    [ac, master, sfx, music, noiseBuf] = saved;
+    return buf;
+  },
+};
 })();
 </script>
