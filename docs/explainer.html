@@ -1,0 +1,731 @@
+<title>Watchnote Explainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+:root {
+  --bg: #f4f1ec; --ink: #1d1d1f; --muted: #6b6b70; --line: #e2ddd4; --card: #fff;
+  --accent: #2f6fed; --accent-soft: #e8efff; --focus: #2f6fed;
+  --sans: "Schibsted Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15161a; --ink: #ececef; --muted: #9a9aa3; --line: #2b2c32; --card: #1e1f24;
+    --accent: #6d9bff; --accent-soft: #1f2a44; --focus: #8fb2ff;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15161a; --ink: #ececef; --muted: #9a9aa3; --line: #2b2c32; --card: #1e1f24;
+  --accent: #6d9bff; --accent-soft: #1f2a44; --focus: #8fb2ff;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 48px; display: flex; flex-direction: column; gap: 20px; }
+.head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.mark { width: 34px; height: 34px; border-radius: 9px; background: #2f6fed; position: relative; flex: none; }
+.mark::after { content: ""; position: absolute; inset: 9px 9px 11px 9px; border: 3px solid #fff; border-radius: 50%; }
+.head h1 { font-size: 26px; line-height: 1.1; margin: 0; letter-spacing: -0.02em; text-wrap: balance; }
+.head p { margin: 2px 0 0; color: var(--muted); max-width: 62ch; }
+
+.player { background: #0e0f12; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 40px rgba(20, 20, 30, .18); }
+.viewport { position: relative; width: 100%; aspect-ratio: 16 / 9; max-width: 100%; overflow: hidden; background: #f4f1ec; cursor: pointer; }
+#stage { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; transform-origin: 0 0; font-family: var(--sans); color: #1d1d1f; background: #f4f1ec; overflow: hidden; }
+.bigplay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(15, 16, 20, .28); border: 0; cursor: pointer; padding: 0; }
+.bigplay span { width: 84px; height: 84px; border-radius: 50%; background: #2f6fed; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 30px rgba(47, 111, 237, .5); transition: transform .15s; }
+.bigplay:hover span, .bigplay:focus-visible span { transform: scale(1.06); }
+.bigplay svg { width: 34px; height: 34px; margin-left: 5px; fill: #fff; }
+.bigplay:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+
+.controls { display: flex; align-items: center; gap: 12px; padding: 10px 14px; color: #e9e9ee; font: 13px var(--sans); flex-wrap: wrap; }
+.controls button { background: transparent; border: 0; color: inherit; width: 34px; height: 34px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: none; }
+.controls button:hover { background: rgba(255, 255, 255, .08); }
+.controls button:focus-visible { outline: 2px solid #8fb2ff; }
+.controls svg { width: 18px; height: 18px; fill: currentColor; }
+.time { font-variant-numeric: tabular-nums; color: #b7b8c0; min-width: 88px; }
+.scrub { flex: 1 1 200px; position: relative; height: 34px; display: flex; align-items: center; }
+.scrub input { width: 100%; margin: 0; accent-color: #2f6fed; cursor: pointer; }
+.ticks { position: absolute; left: 0; right: 0; top: 4px; height: 6px; pointer-events: none; }
+.ticks i { position: absolute; top: 0; width: 2px; height: 6px; background: #5b5d68; border-radius: 1px; }
+
+.chapters { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.chapters button { text-align: left; font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; display: flex; gap: 10px; align-items: baseline; }
+.chapters button:hover { border-color: var(--accent); }
+.chapters button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.chapters button.on { border-color: var(--accent); background: var(--accent-soft); }
+.chapters b { font-weight: 600; }
+.chapters span { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; min-width: 34px; }
+.foot { color: var(--muted); font-size: 13px; max-width: 70ch; margin: 0; }
+.foot a { color: var(--accent); }
+
+/* ---------- stage ---------- */
+.scene { position: absolute; inset: 0; opacity: 0; }
+.abs { position: absolute; }
+.cap { position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); max-width: 1000px; padding: 12px 22px; background: rgba(29, 29, 31, .9); color: #fff; font-size: 25px; line-height: 1.35; font-weight: 500; border-radius: 10px; text-align: center; opacity: 0; text-wrap: balance; }
+.cap code { font-family: var(--mono); font-size: 22px; background: #fff7d6; color: #5a4a12; padding: 1px 6px; border-radius: 5px; }
+
+.logo-big { width: 132px; height: 132px; border-radius: 34px; background: #2f6fed; box-shadow: 0 18px 50px rgba(47, 111, 237, .35); }
+.wordmark { font-size: 92px; font-weight: 800; letter-spacing: -0.045em; line-height: 1; }
+.tagline { font-size: 30px; color: #55555b; font-weight: 500; }
+
+.editor { background: #1b1d24; border-radius: 14px; box-shadow: 0 24px 60px rgba(20, 20, 40, .28); overflow: hidden; font-family: var(--mono); font-size: 15.5px; color: #d6d9e0; }
+.editor .bar { height: 44px; background: #14161c; display: flex; align-items: center; gap: 8px; padding: 0 16px; font-family: var(--sans); font-size: 15px; color: #9ba1b0; }
+.editor .bar i { width: 12px; height: 12px; border-radius: 50%; background: #3a3d48; }
+.editor .bar b { margin-left: 14px; color: #e4e6ec; font-weight: 500; background: #1b1d24; padding: 12px 16px 12px; border-radius: 8px 8px 0 0; align-self: flex-end; }
+.editor .code { padding: 18px 0 22px; }
+.row { height: 36px; line-height: 36px; display: flex; white-space: pre; overflow: hidden; position: relative; }
+.row .ln { width: 64px; text-align: right; padding-right: 22px; color: #555a68; flex: none; }
+.row .tx { flex: 1; }
+.row .hl { position: absolute; inset: 0; pointer-events: none; }
+.kw { color: #c792ea; } .fn { color: #82aaff; } .ty { color: #ffcb6b; } .cm { color: #9aa3b8; font-style: italic; }
+.ref { border-radius: 4px; padding: 2px 0; }
+.ref.on { background: #fff7d6; color: #5a4a12; font-style: normal; font-weight: 700; box-shadow: 0 0 0 3px #fff7d6; }
+.caret { display: inline-block; width: 2px; height: 19px; background: #82aaff; vertical-align: -4px; margin-left: 1px; }
+
+.bubble { background: #fff; color: #1d1d1f; font-family: var(--sans); font-size: 22px; font-weight: 600; padding: 12px 18px; border-radius: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); white-space: nowrap; }
+.bubble::before { content: ""; position: absolute; left: -9px; top: 18px; border: 9px solid transparent; border-left: 0; border-right-color: #fff; }
+
+.card { background: #fff; border: 1px solid #e4e0d8; border-radius: 14px; padding: 18px 20px; box-shadow: 0 8px 24px rgba(40, 35, 20, .08); }
+.card .repo { font-family: var(--mono); font-size: 15px; color: #6b6b70; }
+.card .ttl { font-size: 22px; font-weight: 600; line-height: 1.25; margin-top: 4px; }
+.card .meta { font-size: 15px; color: #6b6b70; margin-top: 10px; display: flex; gap: 8px; align-items: center; }
+.badge { display: inline-block; font-size: 13px; font-weight: 700; color: #fff; padding: 3px 10px; border-radius: 12px; }
+.badge.open { background: #1f883d; } .badge.merged { background: #8250df; } .badge.closed { background: #cf222e; }
+.label { font-size: 13px; font-weight: 700; color: #6b6b70; text-transform: uppercase; letter-spacing: .08em; }
+
+.callout { font-size: 20px; line-height: 1.4; color: #1d1d1f; }
+.callout .syn { font-family: var(--mono); font-size: 30px; font-weight: 700; background: #fff7d6; color: #5a4a12; border: 2px solid #f0d98a; padding: 6px 14px; border-radius: 10px; display: inline-block; margin-bottom: 14px; }
+.styles { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.styles span { font-family: var(--mono); font-size: 18px; background: #fff; border: 1px solid #ddd8ce; padding: 6px 12px; border-radius: 8px; }
+
+.col-title { font-size: 15px; font-weight: 700; color: #6b6b70; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 12px; display: flex; justify-content: space-between; }
+.col-title em { font-style: normal; text-transform: none; letter-spacing: 0; font-weight: 500; color: #2f6fed; }
+.repo-row, .file-row { height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-bottom: 1px solid #eee9e0; font-size: 17px; }
+.repo-row:last-child, .file-row:last-child { border-bottom: 0; }
+.repo-row .nm, .file-row .nm { font-family: var(--mono); font-size: 16px; }
+.st { font-size: 14px; color: #8a8a90; }
+.st.go { color: #2f6fed; font-weight: 600; } .st.ok { color: #1f883d; font-weight: 600; }
+.list { background: #fff; border: 1px solid #e4e0d8; border-radius: 14px; overflow: hidden; position: relative; }
+.hit { font-family: var(--mono); font-size: 13px; font-weight: 700; background: #fff7d6; color: #5a4a12; border: 1px solid #f0d98a; padding: 2px 8px; border-radius: 6px; }
+.scanbar { position: absolute; left: 0; right: 0; height: 3px; background: #2f6fed; box-shadow: 0 0 18px 6px rgba(47, 111, 237, .35); }
+.mini { padding: 14px 16px; margin-bottom: 12px; }
+.mini .ttl { font-size: 18px; }
+
+.track { position: absolute; left: 80px; width: 1120px; top: 380px; height: 4px; background: #d9d3c8; border-radius: 2px; }
+.ping { position: absolute; top: 382px; width: 0; height: 0; }
+.ping i { position: absolute; left: -9px; top: -7px; width: 18px; height: 18px; border-radius: 50%; background: #9aa0ad; border: 3px solid #f4f1ec; }
+.ping b { position: absolute; left: -40px; width: 80px; top: 22px; text-align: center; font-family: var(--mono); font-size: 16px; color: #6b6b70; font-weight: 500; }
+.ping.ev i { left: -15px; top: -13px; width: 30px; height: 30px; background: #8250df; }
+.ping.ev b { color: #8250df; font-weight: 700; width: 160px; left: -80px; top: 28px; }
+.ping .ring { position: absolute; left: -30px; top: -28px; width: 60px; height: 60px; border-radius: 50%; border: 3px solid #8250df; }
+.seg { position: absolute; top: 326px; font-size: 18px; color: #1d1d1f; font-weight: 600; transform: translateX(-50%); white-space: nowrap; }
+.seg::after { content: ""; display: block; height: 10px; border: 2px solid #b9b2a5; border-bottom: 0; margin-top: 6px; }
+.legend { position: absolute; left: 80px; top: 462px; font-size: 20px; color: #55555b; display: flex; gap: 28px; }
+.legend code { font-family: var(--mono); font-size: 17px; background: #fff; border: 1px solid #ddd8ce; padding: 2px 8px; border-radius: 6px; color: #1d1d1f; }
+
+.mail { background: #fff; border-radius: 14px; box-shadow: 0 24px 60px rgba(40, 35, 20, .18); overflow: hidden; border: 1px solid #e4e0d8; }
+.mail .hd { padding: 18px 24px 14px; border-bottom: 1px solid #eee9e0; }
+.mail .from { font-size: 15px; color: #6b6b70; display: flex; align-items: center; gap: 10px; }
+.mail .from .mk { width: 26px; height: 26px; border-radius: 7px; background: #2f6fed; position: relative; }
+.mail .from .mk::after { content: ""; position: absolute; inset: 7px 7px 8px 7px; border: 2px solid #fff; border-radius: 50%; }
+.mail .subj { font-size: 23px; font-weight: 700; margin-top: 8px; letter-spacing: -0.01em; }
+.mail .bd { padding: 18px 24px 22px; display: flex; flex-direction: column; gap: 16px; }
+.note { background: #fff7d6; border: 1px solid #f0d98a; border-radius: 10px; padding: 12px 16px; color: #5a4a12; font-size: 17px; }
+.note .why { font-weight: 700; margin-bottom: 4px; }
+.note .c { font-family: var(--mono); font-size: 16px; line-height: 1.45; }
+.note .src { font-size: 14px; opacity: .75; margin-top: 6px; font-family: var(--mono); }
+.act { display: flex; gap: 12px; align-items: center; font-size: 18px; }
+.act .ic { width: 32px; height: 32px; border-radius: 50%; background: #8250df; flex: none; display: flex; align-items: center; justify-content: center; }
+.act .ic svg { width: 17px; height: 17px; fill: #fff; }
+.act small { color: #6b6b70; font-size: 15px; }
+.btns { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.btns .q { font-size: 17px; font-weight: 600; margin-right: 6px; }
+.btn { border-radius: 10px; padding: 10px 16px; font-weight: 600; font-size: 16px; border: 1px solid #d8d8d8; background: #fff; }
+.btn.pri { background: #2f6fed; color: #fff; border-color: #2f6fed; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { border: 1px solid #d6d6d6; border-radius: 18px; padding: 7px 14px; font-size: 16px; background: #fff; }
+.chip.on { background: #e8efff; border-color: #2f6fed; color: #2f6fed; font-weight: 600; }
+.tg { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; font-size: 16px; border-bottom: 1px solid #f0ece5; }
+.sw { width: 38px; height: 22px; border-radius: 11px; background: #ccc; position: relative; }
+.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; }
+.sw.on { background: #1f883d; } .sw.on::after { left: 19px; }
+.panel .label { margin: 14px 0 8px; }
+.panel .label:first-child { margin-top: 0; }
+
+.inbox .irow { display: grid; grid-template-columns: 34px 1fr auto; gap: 14px; padding: 16px 22px; border-bottom: 1px solid #eee9e0; align-items: start; }
+.inbox .irow:last-child { border-bottom: 0; }
+.inbox .dotu { width: 10px; height: 10px; border-radius: 50%; background: #2f6fed; margin: 9px 0 0 12px; }
+.inbox .s { font-size: 19px; font-weight: 700; }
+.inbox .s.read { font-weight: 500; color: #55555b; }
+.inbox .p { font-size: 16px; color: #6b6b70; margin-top: 3px; }
+.inbox .p b { color: #5a4a12; background: #fff7d6; font-weight: 500; padding: 0 4px; border-radius: 4px; }
+.inbox .tm { font-size: 14px; color: #8a8a90; font-variant-numeric: tabular-nums; }
+.tagpill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 14px; font-weight: 700; color: #1f883d; border: 1.5px solid #1f883d; border-radius: 12px; padding: 1px 9px; margin-left: 8px; vertical-align: 2px; }
+
+.pill { font-family: var(--mono); font-size: 17px; background: #1d1d1f; color: #fff; padding: 8px 14px; border-radius: 8px; }
+.watch-state { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; margin-top: 12px; }
+.watch-state i { width: 10px; height: 10px; border-radius: 50%; background: #1f883d; }
+
+.steps { display: flex; gap: 18px; }
+.step { background: #fff; border: 1px solid #e4e0d8; border-radius: 12px; padding: 14px 18px; font-size: 19px; width: 300px; }
+.step span { display: block; font-size: 13px; font-weight: 700; color: #2f6fed; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 4px; }
+.step code { font-family: var(--mono); font-size: 16px; background: #fff7d6; color: #5a4a12; padding: 1px 5px; border-radius: 4px; }
+.url { font-family: var(--mono); font-size: 26px; color: #2f6fed; font-weight: 700; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bigplay span { transition: none; }
+}
+</style>
+
+<main class="wrap">
+  <div class="head">
+    <div class="mark" aria-hidden="true"></div>
+    <div>
+      <h1>Watchnote in 70 seconds</h1>
+      <p>How a comment in your code turns into a watch on a GitHub issue or pull request, and the email you get when it changes. Turn your sound on.</p>
+    </div>
+  </div>
+
+  <section class="player" aria-label="Explainer video">
+    <div class="viewport" id="viewport">
+      <div id="stage" aria-hidden="true"></div>
+      <button class="bigplay" id="bigplay" aria-label="Play the explainer with sound"><span><svg viewBox="0 0 24 24"><path d="M6 4l15 8-15 8z"/></svg></span></button>
+    </div>
+    <div class="controls">
+      <button id="playbtn" aria-label="Play"><svg viewBox="0 0 24 24"><path id="playicon" d="M6 4l15 8-15 8z"/></svg></button>
+      <span class="time" id="time">0:00 / 1:10</span>
+      <div class="scrub">
+        <div class="ticks" id="ticks"></div>
+        <input type="range" id="scrub" min="0" max="70" step="0.01" value="0" aria-label="Seek">
+      </div>
+      <button id="mutebtn" aria-label="Mute"><svg viewBox="0 0 24 24"><path id="muteicon" d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.5 4.5 0 0 0 16.5 12zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06A9 9 0 0 0 14 3.23z"/></svg></button>
+      <button id="fsbtn" aria-label="Full screen"><svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg></button>
+    </div>
+  </section>
+
+  <nav class="chapters" id="chapters" aria-label="Chapters"></nav>
+
+  <p class="foot">Every sound is synthesized live in your browser with the Web Audio API, and every frame is drawn from the playhead time, so you can scrub anywhere. Space plays and pauses; the arrow keys skip 5 seconds. Learn more at <a href="https://github.com/u9g/watchnote">github.com/u9g/watchnote</a>.</p>
+</main>
+
+<script>
+(() => {
+const T = 70;
+const stage = document.getElementById('stage');
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const P = (t, a, b) => clamp((t - a) / (b - a));
+const eo = x => 1 - Math.pow(1 - x, 3);
+const eio = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const back = x => { const c1 = 1.70158, c3 = c1 + 1; return x <= 0 ? 0 : 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const h = (html) => { const d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstChild; };
+const put = (el, o, y = 0, s = 1, x = 0) => { el.style.opacity = o; el.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
+const fadeUp = (el, t, a, d = .45, dist = 18) => { const k = eo(P(t, a, a + d)); put(el, k, (1 - k) * dist); return k; };
+const popIn = (el, t, a, d = .45) => { const k = P(t, a, a + d); put(el, clamp(k * 3), 0, .6 + .4 * back(k)); return k; };
+
+const COMMENT = '// octo/hello#7: Retry until shutdown stops racing; delete once this is fixed.';
+const REF = 'octo/hello#7:';
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+// ---------- editor ----------
+function editor(id, left, top, width) {
+  const rows = [
+    ['41', '<span class="kw">func</span> (w *<span class="ty">Worker</span>) <span class="fn">Run</span>() {', 'r0'],
+    ['42', '    ', 'cm'],
+    ['43', '    <span class="kw">for</span> !w.<span class="fn">shutdown</span>() {', 'l1'],
+    ['44', '        time.<span class="fn">Sleep</span>(time.<span class="ty">Second</span>)', 'l2'],
+    ['45', '    }', 'l3'],
+    ['46', '    w.<span class="fn">serve</span>()', 'r5'],
+    ['47', '}', 'r6'],
+  ];
+  const el = h(`<div class="editor abs" id="${id}" style="left:${left}px;top:${top}px;width:${width}px">
+    <div class="bar"><i></i><i></i><i></i><b>internal/worker.go</b></div>
+    <div class="code">${rows.map(([n, tx, k]) => `<div class="row" data-k="${k}"><div class="hl"></div><span class="ln">${n}</span><span class="tx">${tx}</span></div>`).join('')}</div>
+  </div>`);
+  const R = {};
+  el.querySelectorAll('.row').forEach(r => R[r.dataset.k] = r);
+  const ln = [...el.querySelectorAll('.ln')];
+  return { el, R, setComment(n, caret, mark) {
+      const s = COMMENT.slice(0, n);
+      let html;
+      if (mark && n >= COMMENT.length) html = `<span class="cm">// <span class="ref on">${REF}</span>${esc(COMMENT.slice(3 + REF.length))}</span>`;
+      else html = `<span class="cm">${esc(s)}</span>`;
+      const key = n + '|' + caret + '|' + mark;
+      if (R.cm._k !== key) { R.cm._k = key; R.cm.querySelector('.tx').innerHTML = '    ' + html + (caret ? '<span class="caret"></span>' : ''); }
+    },
+    renumber() { let n = 41; el.querySelectorAll('.row').forEach(r => { const vis = parseFloat(r.style.height || 36) > 18; r.querySelector('.ln').textContent = vis ? n++ : ''; }); }
+  };
+}
+const rowH = (r, k) => { r.style.height = (36 * k) + 'px'; r.style.opacity = k; };
+const rowHL = (r, color) => { r.querySelector('.hl').style.background = color; };
+
+// ---------- scenes ----------
+const scenes = [];
+function scene(a, b, build, render) { const el = h('<div class="scene"></div>'); stage.appendChild(el); const s = { a, b, el }; s.parts = build(el); s.render = render; scenes.push(s); }
+
+// 1. Title
+scene(0, 5, el => {
+  const C = 2 * Math.PI * 30;
+  const logo = h(`<div class="abs logo-big" style="left:574px;top:150px"><svg viewBox="0 0 132 132" width="132" height="132"><circle cx="66" cy="62" r="30" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C}" transform="rotate(-90 66 62)"/></svg></div>`);
+  const word = h('<div class="abs wordmark" style="left:0;width:1280px;text-align:center;top:320px">Watchnote</div>');
+  const tag = h('<div class="abs tagline" style="left:0;width:1280px;text-align:center;top:440px">Comments in your code that watch GitHub for you.</div>');
+  el.append(logo, word, tag);
+  return { logo, ring: logo.querySelector('circle'), C, word, tag };
+}, (t, p) => {
+  const k = P(t, .15, .8); put(p.logo, clamp(k * 3), 0, .5 + .5 * back(k));
+  p.ring.setAttribute('stroke-dashoffset', p.C * (1 - eio(P(t, .55, 1.6))));
+  fadeUp(p.word, t, 1.1, .6, 24);
+  fadeUp(p.tag, t, 1.8, .6, 16);
+});
+
+// 2. The problem + writing the comment
+scene(5, 23, el => {
+  const ed = editor('ed1', 50, 120, 880);
+  const bubble = h('<div class="abs bubble" style="left:470px;top:152px">Why is this loop here?</div>');
+  ed.el.appendChild(bubble);
+  const card = h(`<div class="abs card" style="left:955px;top:150px;width:285px">
+      <div class="repo">octo/hello #7</div>
+      <div class="ttl">Fix shutdown race in retry loop</div>
+      <div class="meta"><span class="badge merged">Merged</span> 3 months ago</div>
+    </div>`);
+  const sad = h('<div class="abs" style="left:955px;top:350px;width:285px;font-size:22px;font-weight:600;color:#cf222e">Nobody told you.</div>');
+  const sad2 = h('<div class="abs" style="left:955px;top:386px;width:285px;font-size:19px;color:#55555b;line-height:1.4">The fix shipped upstream, and your workaround is still running.</div>');
+  const call = h(`<div class="abs callout" style="left:955px;top:120px;width:290px">
+      <div class="syn">owner/repo#N:</div>
+      <div>Start a comment with the issue or PR your code depends on. Then say why, in your own words.</div>
+      <div class="styles">${['//', '#', '--', ';', '/* */', '&lt;!-- --&gt;', '"""'].map(s => `<span>${s}</span>`).join('')}</div>
+    </div>`);
+  el.append(ed.el, card, sad, sad2, call);
+  return { ed, bubble, card, sad, sad2, call, styles: [...call.querySelectorAll('.styles span')] };
+}, (t, p) => {
+  const lt = t - 5; const { ed } = p;
+  put(ed.el, 1, (1 - eo(P(lt, 0, .6))) * 30);
+  // loop highlight + question
+  const q = P(lt, 1.2, 1.7) * (1 - P(lt, 7.4, 7.9));
+  ['l1', 'l2', 'l3'].forEach(k => rowHL(ed.R[k], `rgba(255, 203, 107, ${.13 * q})`));
+  const bk = P(lt, 1.5, 2.0); put(p.bubble, clamp(bk * 3) * (1 - P(lt, 7.4, 7.8)), 0, .7 + .3 * back(bk));
+  const ck = P(lt, 4.5, 5.0); put(p.card, clamp(ck * 3) * (1 - P(lt, 7.5, 8.0)), 0, .7 + .3 * back(ck));
+  put(p.sad, eo(P(lt, 5.6, 6.0)) * (1 - P(lt, 7.5, 8.0)), 0);
+  put(p.sad2, eo(P(lt, 6.1, 6.5)) * (1 - P(lt, 7.5, 8.0)), 0);
+  // comment line
+  rowH(ed.R.cm, eo(P(lt, 8.4, 9.0)));
+  const n = Math.floor(P(lt, 9.0, 14.4) * COMMENT.length);
+  const caret = lt > 8.6 && lt < 14.8 && (lt > 9 && lt < 14.4 || Math.floor(lt * 2.5) % 2 === 0);
+  ed.setComment(n, caret, lt > 14.9);
+  ed.renumber();
+  fadeUp(p.call, t - 5, 14.9, .5);
+  p.styles.forEach((s, i) => popIn(s, lt, 15.8 + i * .18, .35));
+});
+
+// 3. Scanning
+const FILES = [['cmd/worker/main.go'], ['internal/retry.go'], ['internal/worker.go', 'octo/hello#7'], ['internal/worker_test.go'], ['docs/deploy.md', 'octo/infra#112'], ['go.mod'], ['README.md']];
+const SCAN_A = 1.9, SCAN_B = 4.7;
+scene(23, 32, el => {
+  const a = h(`<div class="abs" style="left:70px;top:70px;width:360px">
+      <div class="col-title">GitHub token <em>every 5 min</em></div>
+      <div class="list">
+        <div class="repo-row"><span class="nm">u9g/worker</span><span class="st" data-s="w">pushed 1m ago</span></div>
+        <div class="repo-row"><span class="nm">u9g/site</span><span class="st">unchanged</span></div>
+        <div class="repo-row"><span class="nm">u9g/infra</span><span class="st">unchanged</span></div>
+        <div class="repo-row"><span class="nm">u9g/hello</span><span class="st">fork · skipped</span></div>
+      </div>
+      <div style="margin-top:14px;font-size:16px;color:#6b6b70;line-height:1.45">Fine-grained, read-only. Repos you can push to are read again when they change.</div>
+    </div>`);
+  const b = h(`<div class="abs" style="left:470px;top:70px;width:380px">
+      <div class="col-title">u9g/worker @ main</div>
+      <div class="list" id="files">${FILES.map(([f]) => `<div class="file-row"><span class="nm">${f}</span><span></span></div>`).join('')}<div class="scanbar"></div></div>
+    </div>`);
+  const c = h(`<div class="abs" style="left:890px;top:70px;width:320px">
+      <div class="col-title">Watching</div>
+      <div class="card mini"><div class="repo">octo/hello #7</div><div class="ttl">Fix shutdown race in retry loop</div><div class="meta"><span class="badge open">Open</span> pull request</div></div>
+      <div class="card mini"><div class="repo">octo/infra #112</div><div class="ttl">Pin the runner image</div><div class="meta"><span class="badge open">Open</span> issue</div></div>
+    </div>`);
+  el.append(a, b, c);
+  const rows = [...b.querySelectorAll('.file-row')];
+  rows.forEach((r, i) => { if (FILES[i][1]) r.lastChild.outerHTML = `<span class="hit">${FILES[i][1]}</span>`; });
+  return { a, b, c, repoRows: [...a.querySelectorAll('.repo-row')], wst: a.querySelector('[data-s=w]'), rows: [...b.querySelectorAll('.file-row')], bar: b.querySelector('.scanbar'), cards: [...c.querySelectorAll('.card')], ctitle: c.querySelector('.col-title') };
+}, (t, p) => {
+  const lt = t - 23;
+  fadeUp(p.a.querySelector('.col-title'), lt, .1);
+  p.repoRows.forEach((r, i) => fadeUp(r, lt, .3 + i * .15, .35, 10));
+  const s = lt < 1.2 ? ['pushed 1m ago', ''] : lt < SCAN_B ? ['scanning…', 'go'] : ['2 references', 'ok'];
+  if (p.wst._s !== s[0]) { p.wst._s = s[0]; p.wst.textContent = s[0]; p.wst.className = 'st ' + s[1]; }
+  rowHL2(p.repoRows[0], lt > 1.2 ? '#f3f6ff' : '#fff');
+  fadeUp(p.b, lt, 1.2, .45);
+  const H = p.rows.length * 48;
+  const y = P(lt, SCAN_A, SCAN_B) * H;
+  p.bar.style.top = y + 'px'; p.bar.style.opacity = lt > SCAN_A && lt < SCAN_B + .3 ? 1 : 0;
+  p.rows.forEach((r, i) => {
+    const passed = y > i * 48 + 24 && lt > SCAN_A;
+    r.style.color = passed ? '#1d1d1f' : '#a4a4aa';
+    const hit = r.querySelector('.hit');
+    if (hit) { const ht = SCAN_A + ((i * 48 + 24) / H) * (SCAN_B - SCAN_A); popIn(hit, lt, ht, .35); r.style.background = lt > ht ? '#fffbea' : '#fff'; }
+  });
+  fadeUp(p.ctitle, lt, 4.4);
+  p.cards.forEach((c, i) => { const k = P(lt, 4.8 + i * .5, 5.35 + i * .5); put(c, clamp(k * 3), 0, .7 + .3 * back(k), (1 - eo(k)) * -60); });
+});
+function rowHL2(r, bg) { r.style.background = bg; }
+
+// 4. Polling
+const PINGS = [[.8, 120], [1.25, 215], [1.7, 310], [2.15, 405], [2.9, 580], [3.6, 755], [4.6, 985], [6.2, 1150, 1]];
+scene(32, 42, el => {
+  const card = h(`<div class="abs card" style="left:330px;top:70px;width:620px">
+      <div class="repo">octo/hello #7 · pull request</div>
+      <div class="ttl" style="font-size:28px">Fix shutdown race in retry loop</div>
+      <div class="meta"><span class="badge open" id="pbadge">Open</span> <span id="pmeta">watched because of 1 comment</span></div>
+    </div>`);
+  const track = h('<div class="track"></div>');
+  const pings = PINGS.map(([, x, ev]) => { const d = h(`<div class="ping${ev ? ' ev' : ''}" style="left:${80 + x - 80}px">${ev ? '<div class="ring"></div>' : ''}<i></i><b>${ev ? '200 · merged' : '304'}</b></div>`); return d; });
+  const segs = [[262, 'every 2 min', .9], [668, 'every 10 min', 2.9], [985, 'hourly', 4.4]].map(([x, s, a]) => { const d = h(`<div class="seg" style="left:${x}px;width:${x === 262 ? 300 : x === 668 ? 190 : 120}px;text-align:center">${s}</div>`); d._a = a; return d; });
+  const legend = h(`<div class="legend"><span><code>304</code> Not Modified: free against the rate limit</span></div>`);
+  const legend2 = h(`<div class="legend" style="top:506px"><span><code>200</code> Something changed: read the timeline from the last page seen</span></div>`);
+  el.append(card, track, ...segs, ...pings, legend, legend2);
+  return { card, badge: card.querySelector('#pbadge'), meta: card.querySelector('#pmeta'), track, pings, segs, legend, legend2 };
+}, (t, p) => {
+  const lt = t - 32;
+  fadeUp(p.card, lt, 0, .5);
+  p.track.style.opacity = eo(P(lt, .3, .7));
+  p.pings.forEach((d, i) => {
+    const k = P(lt, PINGS[i][0], PINGS[i][0] + .35);
+    put(d, clamp(k * 4), 0, .4 + .6 * back(k));
+    const ring = d.querySelector('.ring');
+    if (ring) { const r = P(lt, PINGS[i][0], PINGS[i][0] + .9); ring.style.opacity = (1 - r) * (r > 0 ? 1 : 0); ring.style.transform = `scale(${.5 + r * 1.6})`; }
+  });
+  p.segs.forEach(s => fadeUp(s, lt, s._a, .4, 8));
+  fadeUp(p.legend, lt, 1.4, .45, 10);
+  fadeUp(p.legend2, lt, 6.9, .45, 10);
+  const merged = lt > 6.2;
+  if (p.badge._m !== merged) { p.badge._m = merged; p.badge.className = 'badge ' + (merged ? 'merged' : 'open'); p.badge.textContent = merged ? 'Merged' : 'Open'; p.meta.textContent = merged ? 'merged by mona just now' : 'watched because of 1 comment'; }
+  const bk = P(lt, 6.2, 6.7); p.badge.style.transform = `scale(${lt > 6.2 && lt < 6.7 ? 1 + .35 * Math.sin(bk * Math.PI) : 1})`; p.badge.style.display = 'inline-block';
+  p.card.style.boxShadow = merged ? `0 0 0 ${4 * (1 - P(lt, 6.2, 7.6))}px rgba(130, 80, 223, .35), 0 8px 24px rgba(40, 35, 20, .08)` : '';
+});
+
+// 5. The email
+scene(42, 53, el => {
+  const env = h(`<svg class="abs" style="left:0;top:0" width="120" height="84" viewBox="0 0 120 84"><rect x="2" y="2" width="116" height="80" rx="10" fill="#fff" stroke="#2f6fed" stroke-width="4"/><path d="M6 8l54 40 54-40" fill="none" stroke="#2f6fed" stroke-width="4" stroke-linejoin="round"/></svg>`);
+  const mail = h(`<div class="abs mail" style="left:90px;top:44px;width:700px">
+      <div class="hd">
+        <div class="from"><span class="mk"></span> Watchnote &lt;notify@watchnote.u9g.dev&gt; · 11:02</div>
+        <div class="subj">[octo/hello#7] Merged: Fix shutdown race in retry loop</div>
+      </div>
+      <div class="bd">
+        <div class="note"><div class="why">Why your code watches this:</div><div class="c">Retry until shutdown stops racing; delete once this is fixed.</div><div class="src">u9g/worker · internal/worker.go:42</div></div>
+        <div class="act"><span class="ic"><svg viewBox="0 0 16 16"><path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0zm0 2.12a2.25 2.25 0 1 0-1.5 0v5.26a2.25 2.25 0 1 0 1.5 0V9.2A4.5 4.5 0 0 0 8.75 11h1.13a2.25 2.25 0 1 0 0-1.5H8.75A3 3 0 0 1 5.75 6.5V5.37zM11.5 10.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5z"/></svg></span><div><b>mona</b> merged this pull request into main<br><small>2 commits · 4 reviews since you last heard</small></div></div>
+        <div class="btns"><span class="q">Are you done with this?</span><span class="btn pri">Yes, I'm done</span><span class="btn">Status only</span><span class="btn">Mute</span></div>
+      </div>
+    </div>`);
+  const panel = h(`<div class="abs card panel" style="left:830px;top:44px;width:370px">
+      <div class="label">Notify me about</div>
+      <div class="chips"><span class="chip" data-c="0">Everything</span><span class="chip" data-c="1">Status changes</span><span class="chip" data-c="2">Custom</span></div>
+      <div class="tgs" style="margin-top:8px">${[['Comments', 1], ['Reviews', 1], ['Commits', 0], ['Labels and assignees', 0], ['State changes', 1], ['References', 1]].map(([n, on]) => `<div class="tg"><span>${n}</span><span class="sw${on ? ' on' : ''}"></span></div>`).join('')}</div>
+      <div class="label dl">Delivery</div>
+      <div class="chips dl2"><span class="chip">Within minutes</span><span class="chip on">Daily digest</span></div>
+      <div class="dl3" style="margin-top:12px;font-size:16px;color:#55555b">Quiet hours <b style="color:#1d1d1f">22:00 – 07:00</b></div>
+    </div>`);
+  el.append(mail, panel, env);
+  return { env, mail, panel, note: mail.querySelector('.note'), act: mail.querySelector('.act'), btns: mail.querySelector('.btns'), chips: [...panel.querySelectorAll('[data-c]')], tgs: [...panel.querySelectorAll('.tg')], dl: [panel.querySelector('.dl'), panel.querySelector('.dl2'), panel.querySelector('.dl3')] };
+}, (t, p) => {
+  const lt = t - 42;
+  const f = eio(P(lt, 0, .75));
+  p.env.style.opacity = f < 1 ? 1 - P(lt, .6, .85) : 0;
+  p.env.style.transform = `translate(${1150 - f * 770}px, ${-100 + f * 330}px) rotate(${(1 - f) * -18}deg) scale(${1 - f * .2})`;
+  const m = eo(P(lt, .65, 1.15)); put(p.mail, m, (1 - m) * 30, .92 + .08 * m);
+  fadeUp(p.note, lt, 1.3, .45, 10);
+  p.note.style.boxShadow = `0 0 0 ${6 * Math.sin(P(lt, 2.0, 2.8) * Math.PI)}px rgba(240, 217, 138, .7)`;
+  fadeUp(p.act, lt, 2.5, .45, 10);
+  fadeUp(p.btns, lt, 3.3, .45, 10);
+  fadeUp(p.panel, lt, 5.3, .5, 20);
+  const sel = lt < 6.5 ? 0 : lt < 7.4 ? 1 : 2;
+  p.chips.forEach((c, i) => c.classList.toggle('on', i === sel));
+  p.tgs.forEach((g, i) => { const k = eo(P(lt, 7.5 + i * .12, 7.85 + i * .12)); g.style.opacity = .25 + .75 * k; });
+  p.dl.forEach((d, i) => fadeUp(d, lt, 8.6 + i * .3, .4, 8));
+});
+
+// 6. Release
+scene(53, 58, el => {
+  const box = h(`<div class="abs mail inbox" style="left:190px;top:70px;width:900px">
+      <div class="hd" style="display:flex;justify-content:space-between;align-items:center"><div class="subj" style="margin:0">Inbox</div><span class="st">notify@watchnote.u9g.dev</span></div>
+      <div class="rows">
+        <div class="irow" data-new="1"><span class="dotu"></span><div><div class="s">[octo/hello#7] Released: Fix shutdown race in retry loop <span class="tagpill">v2.3.0</span></div><div class="p">v2.3.0 is the first release that contains this PR. Your comment: <b>Retry until shutdown stops racing; delete once this is fixed.</b></div></div><span class="tm">Mon 09:14</span></div>
+        <div class="irow"><span></span><div><div class="s read">[octo/hello#7] Merged: Fix shutdown race in retry loop</div><div class="p">mona merged this pull request into main</div></div><span class="tm">Fri 11:02</span></div>
+        <div class="irow"><span></span><div><div class="s read">Your Watchnote digest: 3 items changed</div><div class="p">octo/infra#112 got 2 comments · octo/hello#7 was approved</div></div><span class="tm">Thu 08:00</span></div>
+      </div>
+    </div>`);
+  el.append(box);
+  const rows = [...box.querySelectorAll('.irow')];
+  return { box, first: rows[0], rest: rows.slice(1), pill: box.querySelector('.tagpill') };
+}, (t, p) => {
+  const lt = t - 53;
+  fadeUp(p.box, lt, 0, .5);
+  const k = eo(P(lt, .7, 1.2));
+  p.first.style.height = lt < .7 ? '0px' : ''; p.first.style.overflow = 'hidden';
+  p.first.style.padding = lt < .7 ? '0 22px' : ''; p.first.style.borderBottomWidth = lt < .7 ? '0' : '';
+  put(p.first, k, 0, 1, (1 - k) * -40);
+  p.first.style.background = `rgba(232, 239, 255, ${k * (1 - P(lt, 3.5, 4.5) * .6)})`;
+  popIn(p.pill, lt, 1.8, .4);
+});
+
+// 7. Stop watching
+scene(58, 64, el => {
+  const ed = editor('ed2', 50, 120, 880);
+  ed.setComment(COMMENT.length, false, false);
+  const card = h(`<div class="abs card" style="left:955px;top:150px;width:285px">
+      <div class="repo">octo/hello #7</div>
+      <div class="ttl">Fix shutdown race in retry loop</div>
+      <div class="meta"><span class="badge merged">Merged</span> released in v2.3.0</div>
+      <div class="watch-state"><i></i><span>Watching · 1 comment</span></div>
+    </div>`);
+  const push = h('<div class="abs pill" style="left:50px;top:470px">git push</div>');
+  const scan = h('<div class="abs" style="left:170px;top:476px;font-size:19px;color:#55555b">Rescanned u9g/worker: the comment is gone.</div>');
+  el.append(ed.el, card, push, scan);
+  return { ed, card, push, scan, ws: card.querySelector('.watch-state') };
+}, (t, p) => {
+  const lt = t - 58; const { ed } = p;
+  put(ed.el, 1, (1 - eo(P(lt, 0, .5))) * 30);
+  fadeUp(p.card, lt, .3, .45);
+  const sel = P(lt, .9, 1.2);
+  ['cm', 'l1', 'l2', 'l3'].forEach(k => { rowHL(ed.R[k], `rgba(207, 34, 46, ${.28 * sel})`); rowH(ed.R[k], 1 - eio(P(lt, 1.9, 2.35))); });
+  ed.renumber();
+  popIn(p.push, lt, 2.6, .4);
+  fadeUp(p.scan, lt, 3.2, .4, 6);
+  const off = lt > 3.8;
+  if (p.ws._o !== off) { p.ws._o = off; p.ws.querySelector('span').textContent = off ? 'Stopped watching' : 'Watching · 1 comment'; p.ws.querySelector('i').style.background = off ? '#9aa0ad' : '#1f883d'; p.ws.style.color = off ? '#6b6b70' : '#1d1d1f'; }
+  p.card.style.filter = `grayscale(${P(lt, 3.8, 4.3)})`;
+  if (lt > .3) p.card.style.opacity = eo(P(lt, .3, .75)) * (1 - .35 * P(lt, 3.8, 4.3));
+});
+
+// 8. Outro
+scene(64, 70.5, el => {
+  const logo = h('<div class="abs" style="left:540px;top:92px;display:flex;align-items:center;gap:18px"><div class="mark" style="width:64px;height:64px;border-radius:17px;background:#2f6fed;position:relative"></div><div class="wordmark" style="font-size:60px">Watchnote</div></div>');
+  logo.querySelector('.mark').innerHTML = '<svg viewBox="0 0 64 64" width="64" height="64"><circle cx="32" cy="30" r="14.5" fill="none" stroke="#fff" stroke-width="5"/></svg>';
+  const steps = h(`<div class="abs steps" style="left:170px;top:250px">
+      <div class="step"><span>Step 1</span>Sign in with Google. Emails go to that address.</div>
+      <div class="step"><span>Step 2</span>Save a read-only GitHub token in Settings.</div>
+      <div class="step"><span>Step 3</span>Write <code>owner/repo#N:</code> comments. That's it.</div>
+    </div>`);
+  const url = h('<div class="abs url" style="left:0;width:1280px;text-align:center;top:450px">watchnote.u9g.dev</div>');
+  const sub = h('<div class="abs" style="left:0;width:1280px;text-align:center;top:500px;font-size:20px;color:#6b6b70">A single Go binary with SQLite. Self-host it with Helm, or use the hosted instance.</div>');
+  el.append(logo, steps, url, sub);
+  return { logo, steps: [...steps.children], url, sub };
+}, (t, p) => {
+  const lt = t - 64;
+  const k = P(lt, .1, .7); put(p.logo, clamp(k * 3), 0, .8 + .2 * back(k));
+  p.logo.style.left = 640 - p.logo.offsetWidth / 2 + 'px';
+  p.steps.forEach((s, i) => fadeUp(s, lt, .9 + i * .35, .45));
+  fadeUp(p.url, lt, 2.3, .5);
+  fadeUp(p.sub, lt, 2.7, .5);
+});
+
+// ---------- captions ----------
+const CAPS = [
+  [5.3, 9.3, 'You wrote a workaround because of a bug in someone else’s repo.'],
+  [9.5, 12.9, 'It got fixed months ago. Nobody told you, and the workaround is still there.'],
+  [13.3, 19.7, 'With Watchnote, you write why in a comment that names the issue or PR.'],
+  [19.9, 22.8, '<code>owner/repo#N:</code> at the start of a comment is the whole syntax. Any comment style works.'],
+  [23.3, 27.6, 'Watchnote uses your read-only GitHub token to scan each repo’s default branch.'],
+  [27.8, 31.8, 'Every issue or PR a comment names becomes a watch.'],
+  [32.3, 36.8, 'It polls each item quietly. An unchanged item costs nothing against your rate limit.'],
+  [37.0, 41.8, 'Quiet items are checked less often. When something happens, it notices.'],
+  [42.3, 47.1, 'You get an email that opens with your comment, linked to its line, so you know why you care.'],
+  [47.3, 52.8, 'Pick what to hear about for each item. Bursts are batched, and quiet hours hold mail overnight.'],
+  [53.3, 57.8, 'After a merge, one more email when a release first contains the fix.'],
+  [58.3, 63.8, 'Delete the comment and the watch stops. There’s nothing to add or remove by hand.'],
+];
+const cap = h('<div class="cap"></div>'); stage.appendChild(cap);
+function renderCap(t) {
+  const c = CAPS.find(c => t >= c[0] && t < c[1]);
+  if (!c) { cap.style.opacity = 0; return; }
+  if (cap._c !== c) { cap._c = c; cap.innerHTML = c[2]; }
+  const o = Math.min(P(t, c[0], c[0] + .3), 1 - P(t, c[1] - .3, c[1]));
+  cap.style.opacity = o; cap.style.transform = `translate(-50%, ${(1 - o) * 8}px)`;
+}
+
+function render(t) {
+  for (const s of scenes) {
+    const o = Math.min(P(t, s.a, s.a + .4), s.b >= T ? 1 : 1 - P(t, s.b - .4, s.b));
+    if (o <= 0) { if (s.el.style.display !== 'none') s.el.style.display = 'none'; continue; }
+    s.el.style.display = ''; s.el.style.opacity = o;
+    s.render(t, s.parts);
+  }
+  renderCap(t);
+}
+
+// ---------- audio ----------
+let ac = null, master, sfx, music, noiseBuf, muted = false, at = null;
+const now = () => at ?? ac.currentTime;
+function initAudio(ctx) {
+  if (ac && !ctx) { if (ac.state === 'suspended') ac.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC && !ctx) return;
+  ac = ctx || new AC();
+  master = ac.createGain(); master.gain.value = muted ? 0 : .9;
+  const comp = ac.createDynamicsCompressor(); master.connect(comp); comp.connect(ac.destination);
+  sfx = ac.createGain(); sfx.gain.value = 1.6; sfx.connect(master);
+  music = ac.createGain(); music.gain.value = .6; music.connect(master);
+  noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+  const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+function tone(f, dur, o = {}) {
+  const { type = 'sine', gain = .15, attack = .006, when = 0, slide, dest = sfx } = o;
+  const t0 = now() + when;
+  const osc = ac.createOscillator(), g = ac.createGain();
+  osc.type = type; osc.frequency.setValueAtTime(f, t0);
+  if (slide) osc.frequency.exponentialRampToValueAtTime(slide, t0 + dur);
+  g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(gain, t0 + attack); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
+  osc.connect(g); g.connect(dest); osc.start(t0); osc.stop(t0 + dur + .05);
+}
+function noise(dur, o = {}) {
+  const { gain = .15, type = 'bandpass', freq = 1000, to, q = 1, when = 0, attack = .005 } = o;
+  const t0 = now() + when;
+  const src = ac.createBufferSource(); src.buffer = noiseBuf;
+  const fl = ac.createBiquadFilter(); fl.type = type; fl.Q.value = q; fl.frequency.setValueAtTime(freq, t0);
+  if (to) fl.frequency.exponentialRampToValueAtTime(to, t0 + dur);
+  const g = ac.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(gain, t0 + attack); g.gain.exponentialRampToValueAtTime(.0001, t0 + dur);
+  src.connect(fl); fl.connect(g); g.connect(sfx); src.start(t0, Math.random() * .5); src.stop(t0 + dur + .05);
+}
+const SND = {
+  whoosh: () => noise(.7, { gain: .22, freq: 250, to: 3200, q: .7, attack: .25 }),
+  whooshDown: () => noise(.6, { gain: .18, freq: 3000, to: 300, q: .7, attack: .15 }),
+  logo: () => { [261.63, 329.63, 392, 493.88, 587.33].forEach((f, i) => { tone(f, 2.6, { gain: .07, attack: .04 + i * .05, when: i * .07 }); tone(f * 2, 1.2, { gain: .015, when: i * .07 }); }); tone(261.63, 2.4, { type: 'triangle', gain: .06, attack: .05 }); },
+  key: () => { noise(.035, { gain: .22, type: 'highpass', freq: 2500 + Math.random() * 2500, q: .5, attack: .001 }); tone(900 + Math.random() * 300, .03, { type: 'square', gain: .02, attack: .001 }); },
+  hmm: () => { tone(392, .22, { type: 'triangle', gain: .12 }); tone(466, .35, { type: 'triangle', gain: .12, when: .16 }); },
+  sad: () => { tone(415.3, .3, { type: 'triangle', gain: .13 }); tone(349.2, .55, { type: 'triangle', gain: .13, when: .22, slide: 330 }); },
+  blip: () => { tone(988, .14, { gain: .12 }); tone(1480, .16, { gain: .07, when: .07 }); },
+  tick: () => tone(1760, .05, { type: 'triangle', gain: .06, attack: .002 }),
+  soft: () => tone(1320, .08, { type: 'sine', gain: .08, attack: .002 }),
+  ping: () => { tone(2093, .09, { gain: .05, attack: .002 }); noise(.03, { gain: .05, type: 'highpass', freq: 6000, attack: .001 }); },
+  pop: () => { tone(440, .16, { type: 'triangle', gain: .16, slide: 880 }); tone(1318.5, .5, { gain: .08, when: .1 }); tone(1760, .6, { gain: .05, when: .16 }); },
+  card: () => { tone(660, .12, { type: 'triangle', gain: .12, slide: 990 }); tone(1320, .2, { gain: .05, when: .06 }); },
+  chime: () => { [1046.5, 1318.5, 1568, 2093].forEach((f, i) => { tone(f, 1.4, { gain: .1, attack: .002, when: i * .08 }); tone(f * 2.76, .4, { gain: .012, when: i * .08 }); }); },
+  del: () => { noise(.4, { gain: .2, freq: 2500, to: 200, q: 1.2 }); tone(700, .35, { type: 'sawtooth', gain: .04, slide: 110 }); },
+  push: () => { tone(523.25, .1, { type: 'square', gain: .04 }); tone(784, .18, { type: 'square', gain: .04, when: .09 }); },
+  off: () => { tone(659.3, .2, { gain: .1 }); tone(493.9, .45, { gain: .1, when: .14 }); },
+  thump: () => { tone(330, .3, { type: 'triangle', gain: .18, slide: 165, attack: .003 }); },
+};
+// music: a soft pad and a plucked arpeggio, 2 seconds per chord
+const CHORDS = [[261.63, 329.63, 392, 493.88], [220, 261.63, 329.63, 392], [174.61, 220, 261.63, 329.63], [196, 246.94, 293.66, 392]];
+function musicChord(i, level) {
+  const ch = CHORDS[i % 4];
+  const t0 = now();
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400; lp.connect(music);
+  ch.forEach(f => {
+    const o = ac.createOscillator(), g = ac.createGain(); o.type = 'triangle'; o.frequency.value = f; o.detune.value = (Math.random() - .5) * 8;
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(.035 * level, t0 + .5); g.gain.linearRampToValueAtTime(.025 * level, t0 + 1.6); g.gain.linearRampToValueAtTime(0, t0 + 2.3);
+    o.connect(g); g.connect(lp); o.start(t0); o.stop(t0 + 2.4);
+  });
+  tone(ch[0], 2.1, { type: 'triangle', gain: .05 * level, attack: .08, dest: music });
+}
+function musicArp(i, level) {
+  const ch = CHORDS[Math.floor(i / 4) % 4]; const f = ch[[0, 2, 1, 3][i % 4]] * 2;
+  tone(f, .45, { gain: .03 * level, attack: .004, dest: music });
+}
+
+const CUES = [];
+const cue = (t, fn) => CUES.push({ t, fn });
+cue(.15, SND.whoosh); cue(.55, SND.logo);
+cue(4.9, SND.whoosh); cue(6.5, SND.hmm); cue(9.5, SND.card); cue(10.6, SND.sad);
+cue(13.4, SND.soft);
+for (let i = 0; i < COMMENT.length; i++) if (COMMENT[i] !== ' ' || i % 3 === 0) cue(14 + (i + .5) / COMMENT.length * 5.4, SND.key);
+cue(19.9, SND.blip); for (let i = 0; i < 7; i++) cue(20.8 + i * .18, SND.tick);
+cue(22.9, SND.whoosh); cue(24.2, SND.soft);
+FILES.forEach((f, i) => { const tt = 23 + SCAN_A + ((i * 48 + 24) / (FILES.length * 48)) * (SCAN_B - SCAN_A); cue(tt, f[1] ? SND.blip : SND.tick); });
+cue(27.8, SND.card); cue(28.3, SND.card);
+cue(31.9, SND.whoosh);
+PINGS.forEach(([pt, , ev]) => cue(32 + pt, ev ? SND.pop : SND.ping));
+cue(41.9, SND.whoosh); cue(42.65, SND.chime); cue(43.8, SND.soft); cue(47.3, SND.whoosh);
+cue(48.5, SND.tick); cue(49.4, SND.tick); for (let i = 0; i < 6; i++) cue(49.5 + i * .12, SND.tick);
+cue(50.6, SND.soft); cue(51.2, SND.soft);
+cue(52.9, SND.whoosh); cue(53.75, SND.chime); cue(54.8, SND.blip);
+cue(57.9, SND.whoosh); cue(58.9, SND.soft); cue(59.9, SND.del); cue(60.6, SND.push); cue(61.8, SND.off);
+cue(63.9, SND.whoosh); cue(64.3, SND.logo); cue(66.35, SND.thump);
+for (let i = 0; i * 2 < 68; i++) { const bt = i * 2; const lvl = bt < 4 ? .6 : bt >= 64 ? .8 : 1; cue(bt, () => musicChord(i, lvl)); }
+for (let i = 0; i * .5 < 68; i++) { const bt = i * .5; if (bt >= 4 && !(bt > 13.8 && bt < 19.6)) cue(bt + .001, () => musicArp(i, 1)); }
+CUES.sort((a, b) => a.t - b.t);
+function fire(a, b) { if (!ac || muted) return; for (const c of CUES) { if (c.t > b) break; if (c.t > a) try { c.fn(); } catch (e) {} } }
+
+// ---------- player ----------
+const vp = document.getElementById('viewport'), big = document.getElementById('bigplay');
+const scrub = document.getElementById('scrub'), timeEl = document.getElementById('time');
+const playIcon = document.getElementById('playicon'), playBtn = document.getElementById('playbtn');
+const muteBtn = document.getElementById('mutebtn'), muteIcon = document.getElementById('muteicon');
+const PLAY = 'M6 4l15 8-15 8z', PAUSE = 'M6 4h4v16H6zM14 4h4v16h-4z';
+const SPK = muteIcon.getAttribute('d'), SPKOFF = 'M3 9v6h4l5 5V4L7 9H3zm18.3-1.3L19.6 6 17 8.6 14.4 6l-1.7 1.7 2.6 2.6-2.6 2.6 1.7 1.7 2.6-2.6 2.6 2.6 1.7-1.7-2.6-2.6z';
+const CHAPS = [[0, 'Watchnote'], [5, 'The problem'], [13, 'Write a comment'], [23, 'Scanning your repos'], [32, 'Polling GitHub'], [42, 'The email'], [53, 'Releases'], [58, 'Stop watching'], [64, 'Get started']];
+const chapNav = document.getElementById('chapters'), ticks = document.getElementById('ticks');
+CHAPS.forEach(([ct, name]) => {
+  const b = document.createElement('button'); b.type = 'button';
+  b.innerHTML = `<span>${fmt(ct)}</span><b>${name}</b>`;
+  b.addEventListener('click', () => { seek(ct); if (!playing) play(); });
+  chapNav.appendChild(b);
+  if (ct > 0) { const i = document.createElement('i'); i.style.left = (ct / T * 100) + '%'; ticks.appendChild(i); }
+});
+const chapBtns = [...chapNav.children];
+
+let t = 0, playing = false, started = false, last = 0, dirty = true;
+function fmt(s) { s = Math.floor(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function play() {
+  initAudio();
+  if (t >= T - .05) t = 0;
+  playing = true; started = true; big.hidden = true; last = performance.now();
+  if (t === 0) fire(-1, 0);
+  playIcon.setAttribute('d', PAUSE); playBtn.setAttribute('aria-label', 'Pause');
+}
+function pause() { playing = false; playIcon.setAttribute('d', PLAY); playBtn.setAttribute('aria-label', 'Play'); }
+function toggle() { playing ? pause() : play(); }
+function seek(x) { t = clamp(x, 0, T); started = true; big.hidden = !!playing || t > 0 ? true : big.hidden; dirty = true; }
+big.addEventListener('click', e => { e.stopPropagation(); play(); });
+vp.addEventListener('click', toggle);
+playBtn.addEventListener('click', toggle);
+scrub.addEventListener('input', () => { seek(parseFloat(scrub.value)); big.hidden = true; });
+muteBtn.addEventListener('click', () => {
+  muted = !muted; if (master) master.gain.value = muted ? 0 : .9;
+  muteIcon.setAttribute('d', muted ? SPKOFF : SPK); muteBtn.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+});
+document.getElementById('fsbtn').addEventListener('click', () => {
+  try { document.fullscreenElement ? document.exitFullscreen() : vp.requestFullscreen().catch(() => {}); } catch (e) {}
+});
+document.addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('input, button:not(.bigplay)') && e.key === ' ') return;
+  if (e.key === ' ' || e.key === 'k') { e.preventDefault(); toggle(); }
+  else if (e.key === 'ArrowRight') { seek(t + 5); big.hidden = true; }
+  else if (e.key === 'ArrowLeft') { seek(t - 5); big.hidden = true; }
+});
+
+function fit() { stage.style.transform = `scale(${vp.clientWidth / 1280})`; }
+new ResizeObserver(fit).observe(vp); fit();
+
+let lastChap = -1;
+function frame(now) {
+  if (playing) {
+    const nt = Math.min(T, t + Math.min(.1, (now - last) / 1000));
+    fire(t, nt); t = nt; last = now; dirty = true;
+    if (t >= T) pause();
+  }
+  if (dirty) {
+    render(!started ? 2.9 : t);
+    scrub.value = t; timeEl.textContent = fmt(t) + ' / ' + fmt(T);
+    let ci = 0; CHAPS.forEach(([ct], i) => { if (t >= ct) ci = i; });
+    if (ci !== lastChap) { chapBtns.forEach((b, i) => b.classList.toggle('on', i === ci)); lastChap = ci; }
+    dirty = false;
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// Hooks for rendering the explainer to a video file offline.
+window.watchnoteExplainer = {
+  duration: T,
+  frame(x) { started = true; big.hidden = true; t = x; render(x); },
+  async soundtrack(rate = 48000) {
+    const saved = [ac, master, sfx, music, noiseBuf];
+    initAudio(new OfflineAudioContext(2, Math.ceil(rate * T), rate));
+    for (const c of CUES) { at = c.t; try { c.fn(); } catch (e) {} }
+    at = null;
+    const buf = await ac.startRendering();
+    [ac, master, sfx, music, noiseBuf] = saved;
+    return buf;
+  },
+};
+})();
+</script>
