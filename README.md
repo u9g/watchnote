@@ -27,7 +27,8 @@ watching it.
   plus a standard `List-Unsubscribe` header.
 - A userscript adds a **Watch with note** button to GitHub issue and PR pages.
 - A code comment like `// owner/repo#123: why` keeps that item watched until the
-  comment is deleted from your repo.
+  comment is deleted from your repo. [Every comment style that works](https://watchnote.u9g.dev/docs/code-comments)
+  is listed at `/docs/code-comments`, no sign-in needed.
 - Private repos work if you save read-only fine-grained GitHub tokens in Settings, one
   per account or organization.
 

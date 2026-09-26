@@ -146,6 +146,15 @@ func TestParseCodeRef(t *testing.T) {
 	}
 }
 
+func TestCodeRefExamples(t *testing.T) {
+	for _, e := range codeRefExamples {
+		target, note, ok := parseCodeRef(e.Line)
+		if ok != e.OK || ok && (target != Ref{"owner", "repo", 123} || note != "why") {
+			t.Errorf("%q: got %v %q %v, docs say %v", e.Line, target, note, ok, e.OK)
+		}
+	}
+}
+
 // A fine-grained token lists repos its user can push to that it can't read.
 func TestCodeRefScanSkipsUnreadableRepo(t *testing.T) {
 	h := newHarness(t)

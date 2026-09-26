@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -486,6 +487,28 @@ func TestWebFlow(t *testing.T) {
 		if resp, _ := h.do("GET", p, nil); resp.StatusCode >= 400 {
 			t.Errorf("GET %s: %d", p, resp.StatusCode)
 		}
+	}
+}
+
+// The code comment docs need no sign-in, and Settings links to them.
+func TestCodeCommentDocs(t *testing.T) {
+	h := newHarness(t)
+	resp, err := h.client().Get(h.srv.URL + "/docs/code-comments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("signed out: %d", resp.StatusCode)
+	}
+	for _, e := range codeRefExamples {
+		if !strings.Contains(html.UnescapeString(string(b)), e.Line) {
+			t.Errorf("docs don't list %q", e.Line)
+		}
+	}
+	if _, body := h.do("GET", "/settings", nil); !strings.Contains(body, `href="/docs/code-comments"`) {
+		t.Error("settings don't link the docs")
 	}
 }
 

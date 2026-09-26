@@ -72,7 +72,7 @@
         {{end}}
         {{if .Scans}}
           <div>Scans <b>{{len .Scans}} {{plural (len .Scans) "repo" "repos"}}</b> for comments like
-            <code class="mono">// owner/repo#123: why</code>:</div>
+            <code class="mono">// owner/repo#123: why</code> (<a href="/docs/code-comments">all formats</a>):</div>
           {{template "repo-list" (list .ID "scans" .Scans)}}
         {{else if .ListedAt}}
           <div>Scans no repos: it can't read any repo you can push to.</div>
@@ -95,7 +95,8 @@
             the repos of one owner, so add one for each.</div>
         {{else}}
           <div>Public issues and PRs work without a token. To watch items in private repos, and to let comments like
-            <code class="mono">// owner/repo#123: why</code> in your code keep items watched, add a
+            <code class="mono">// owner/repo#123: why</code> (<a href="/docs/code-comments">all formats</a>)
+            in your code keep items watched, add a
             <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>.
             A fine-grained token covers the repos of one account or organization, so add one for each.</div>
         {{end}}

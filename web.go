@@ -83,6 +83,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /auth/google/callback", a.handleGoogleCallback)
 	mux.HandleFunc("POST /auth/dev", a.handleDevLogin)
 	mux.HandleFunc("POST /logout", a.handleLogout)
+	mux.HandleFunc("GET /docs/code-comments", a.handleCodeCommentDocs)
 
 	mux.HandleFunc("GET /items", a.withUser(a.handleList))
 	mux.HandleFunc("GET /items/new", a.withUser(a.handleNewForm))
@@ -201,6 +202,12 @@ func safeNext(next string) string {
 		return next
 	}
 	return "/items"
+}
+
+// handleCodeCommentDocs lists the code comments that keep items watched. It
+// needs no sign-in, so it can be linked from anywhere.
+func (a *App) handleCodeCommentDocs(w http.ResponseWriter, r *http.Request) {
+	a.render(w, 200, "docs_code_comments", a.page(a.currentUser(r), "Code comments · Watchnote"))
 }
 
 // ---- landing + auth ----
