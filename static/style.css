@@ -100,6 +100,15 @@ a.card:hover { border-color: #cfd8ea; }
 .tabs a span { font-size: 12px; }
 .tabs a.on { color: var(--ink); font-weight: 600; border-bottom: 2px solid var(--ink); }
 .list-body, .page-body { padding: 14px 16px 90px; display: flex; flex-direction: column; gap: 10px; }
+.formats { padding: 4px 12px; overflow-x: auto; }
+.formats table { border-collapse: collapse; font-size: 13px; }
+.formats tr + tr td { border-top: 1px solid #eee; }
+.formats td { padding: 8px 12px 8px 0; vertical-align: top; }
+.formats td.mono { white-space: pre; }
+@media (max-width: 599px) {
+  .formats td { display: block; padding: 8px 0 0; }
+  .formats td + td { border-top: 0; padding: 2px 0 8px; color: var(--muted); }
+}
 .narrow { max-width: 640px; margin: 0 auto; min-height: 100vh; background: #fafafa; }
 .side, .detail-empty { display: none; }
 .has-detail .list { display: none; }

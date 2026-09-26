@@ -114,7 +114,8 @@ func (a *App) mcpServer(u *User) *mcp.Server {
 		Instructions: "Watchnote emails the user when GitHub issues and PRs they watch change. Each watch has a " +
 			"Markdown note saying why the user cares; read it before acting on a watch, and write one that will make sense " +
 			"to them months later when adding a watch. If the reason is code in a git repo, don't call watch: add a comment " +
-			"on its own line above that code, like `// owner/repo#123: why this code depends on it`. Watchnote scans " +
+			"on its own line above that code, like `// owner/repo#123: why this code depends on it`, in any comment syntax " +
+			"listed at " + a.cfg.BaseURL + "/docs/code-comments. Watchnote scans " +
 			"the repos the user's saved GitHub tokens can see and push to (Settings lists them), and deleting the comment stops the watch. Every watch has a " +
 			"done_badge: Markdown for a badge showing whether the user is done with it, for a PR description.",
 	})
@@ -162,7 +163,8 @@ func (a *App) mcpServer(u *User) *mcp.Server {
 		})
 
 	mcp.AddTool(s, &mcp.Tool{Name: "watch", Description: "Start watching a GitHub issue or PR, with a note on why. " +
-		"If the reason is code in a git repo, add an `// owner/repo#123: why` comment above that code instead.",
+		"If the reason is code in a git repo, add an `// owner/repo#123: why` comment above that code instead " +
+		"(other comment syntaxes: " + a.cfg.BaseURL + "/docs/code-comments).",
 		Annotations: &mcp.ToolAnnotations{IdempotentHint: true, OpenWorldHint: ptr(true)}},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in watchIn) (*mcp.CallToolResult, watchOut, error) {
 			ref, ok := parseRef(in.URL)

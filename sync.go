@@ -59,6 +59,35 @@ func parseCodeRef(line string) (target Ref, note string, ok bool) {
 	return Ref{m[1], m[2], n}, cleanNote(m[4]), n > 0
 }
 
+// codeRefExamples are listed on /docs/code-comments. TestCodeRefExamples
+// checks each is parsed, or not, as the page says.
+var codeRefExamples = []struct {
+	Line, Where string
+	OK          bool
+}{
+	{"// owner/repo#123: why", "C, C++, C#, Go, Java, JavaScript, TypeScript, Rust, Swift, Kotlin", true},
+	{"# owner/repo#123: why", "Python, Ruby, shell, YAML, TOML, Dockerfile, Makefile", true},
+	{"-- owner/repo#123: why", "SQL, Lua, Haskell", true},
+	{";; owner/repo#123: why", "Lisp, Clojure, INI, assembly", true},
+	{"% owner/repo#123: why", "TeX, Erlang, MATLAB", true},
+	{"' owner/repo#123: why", "Visual Basic", true},
+	{"/* owner/repo#123: why */", "Block comments, on one line", true},
+	{" * owner/repo#123: why", "A line inside a block comment", true},
+	{"/// owner/repo#123: why", "Doc comments, like Rust's /// and //!", true},
+	{"<!-- owner/repo#123: why -->", "HTML, XML, Markdown", true},
+	{"(* owner/repo#123: why *)", "OCaml, Pascal", true},
+	{"{- owner/repo#123: why -}", "Haskell block comments", true},
+	{`""" owner/repo#123: why """`, "Python docstrings, on one line", true},
+	{"owner/repo#123: why", "A line with no comment marker, like inside a docstring or a Markdown file", true},
+	{"+  // owner/repo#123: why", "A line added by a .patch or .diff file", true},
+	{"x := f() // owner/repo#123: why", "After code on the same line", false},
+	{"// see owner/repo#123: why", "After other words", false},
+	{"// github.com/owner/repo/issues/123: why", "As a link", false},
+	{"// owner/repo#123", "With no note", false},
+	{"// owner/repo#123:why", "With no space after the colon", false},
+	{"-  // owner/repo#123: why", "On a line a patch file removes", false},
+}
+
 // scanTarball finds reference comments in a GitHub tarball of repo at sha.
 func scanTarball(r io.Reader, repo, sha string) ([]CodeRef, error) {
 	gz, err := gzip.NewReader(r)

@@ -92,6 +92,7 @@ var funcs = map[string]any{
 		}
 		return fmt.Sprintf("%02d:%02d", m/60, m%60)
 	},
+	"codeRefExamples": func() any { return codeRefExamples },
 	"hours": func() []int {
 		h := make([]int, 24)
 		for i := range h {

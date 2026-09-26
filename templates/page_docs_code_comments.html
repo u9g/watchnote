@@ -1,0 +1,34 @@
+{{define "content"}}
+<div class="narrow">
+  <header class="appbar">{{if .User}}<a href="/items">‹ Back</a>{{else}}<a href="/">‹ Watchnote</a>{{end}}<b>Code comments</b><span></span></header>
+  <div class="page-body">
+    <div class="card stack">
+      <div>A comment on a line of its own that starts with <code class="mono">owner/repo#123:</code> and a note
+        keeps that issue or PR watched for as long as the comment is on your repo's default branch.
+        The note shows under yours on the item and in its emails, with a link to the line.
+        Delete the comment and the item is no longer kept watched.</div>
+      <div class="small muted">Watchnote scans the repos your GitHub tokens in Settings can read and you can push to,
+        forks aside, again whenever they're pushed to. Files over 1 MB and binary files are skipped.</div>
+    </div>
+
+    <div class="field-label">Works</div>
+    <div class="card formats">
+      <table>{{range codeRefExamples}}{{if .OK}}
+        <tr><td class="mono">{{.Line}}</td><td>{{.Where}}</td></tr>{{end}}{{end}}
+      </table>
+    </div>
+    <div class="small muted">Any comment marker made of punctuation or symbols works, not only these. Only the
+      closers shown above, like <code class="mono">*/</code> and <code class="mono">--&gt;</code>, are trimmed
+      from the end of the note.</div>
+
+    <div class="field-label">Doesn't work</div>
+    <div class="card formats">
+      <table>{{range codeRefExamples}}{{if not .OK}}
+        <tr><td class="mono">{{.Line}}</td><td>{{.Where}}</td></tr>{{end}}{{end}}
+      </table>
+    </div>
+    <div class="small muted">Put the reference first on the line, followed by a colon, a space and why the code
+      depends on it. One reference per line.</div>
+  </div>
+</div>
+{{end}}
