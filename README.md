@@ -2,10 +2,10 @@
 
 A hosted instance is available at [watchnote.u9g.dev](https://watchnote.u9g.dev).
 
-<video src="https://github.com/u9g/watchnote/raw/claude/watchnote-explainer-video-ambpfl/docs/explainer.mp4" controls width="100%"></video>
+[![A 70-second animated explainer of Watchnote](docs/explainer.webp)](docs/explainer.mp4?raw=true)
 
-A 70-second explainer, with sound. It's rendered from [`docs/explainer.html`](docs/explainer.html),
-which also plays in a browser.
+The preview above is silent. [Play the MP4 with sound](docs/explainer.mp4?raw=true); it's rendered
+from [`docs/explainer.html`](docs/explainer.html), which also plays in a browser.
 
 When code exists because of a GitHub issue or pull request, say so in a comment:
 
