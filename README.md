@@ -2,6 +2,10 @@
 
 A hosted instance is available at [watchnote.u9g.dev](https://watchnote.u9g.dev).
 
+[![Watch the 70-second Watchnote explainer, with sound](docs/explainer-poster.png)](docs/explainer.mp4)
+
+The explainer is rendered from [`docs/explainer.html`](docs/explainer.html), which also plays in a browser.
+
 When code exists because of a GitHub issue or pull request, say so in a comment:
 
 ```go
