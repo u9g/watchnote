@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+# Main's runs go one at a time, so two merges close together never pick the
+# same next version. A pull request's older run is cancelled by its newer one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -38,8 +44,42 @@ jobs:
             --set baseUrl=https://watchnote.example.com --set existingSecret=watchnote \
             --set mail.existingSecret=watchnote-smtp
 
-  image:
+  # Every merge to main is a patch release: the latest vX.Y.Z tag with Z one
+  # higher. A minor or major bump is still a tag pushed by hand, and the
+  # merges after it count on from there. A commit that already has a v tag
+  # (pushed by hand) gets no second one.
+  version:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [test, chart]
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: next
+        run: |
+          if git tag --points-at HEAD | grep -q '^v'; then
+            echo "$GITHUB_SHA is already tagged; nothing to release."
+            exit 0
+          fi
+          tags=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true)
+          latest=$(echo "$tags" | sort -V | tail -n 1)
+          if [ -z "$latest" ]; then
+            next=v0.0.1
+          else
+            IFS=. read -r major minor patch <<< "${latest#v}"
+            next="v$major.$minor.$((patch + 1))"
+          fi
+          echo "latest $latest, next $next"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+
+  image:
+    needs: [test, chart, version]
+    # `version` is skipped on pull requests and tags; that is no reason to
+    # skip this.
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -62,6 +102,7 @@ jobs:
             type=ref,event=pr
             type=sha,prefix=sha-
             type=semver,pattern={{version}}
+            type=semver,pattern={{version}},value=${{ needs.version.outputs.tag }},enable=${{ needs.version.outputs.tag != '' }}
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -73,20 +114,34 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # On a vX.Y.Z tag, publish the chart to oci://ghcr.io/<owner>/charts/watchnote
-  # with its version and appVersion set from the tag.
+  # On a vX.Y.Z tag pushed by hand, or on a merge to main with the tag
+  # `version` picked, publish the chart to oci://ghcr.io/<owner>/charts/watchnote
+  # with its version and appVersion set from the tag. A merge's tag, and its
+  # GitHub release with notes of what went in, are made here, after its image
+  # is pushed, so a release never names an image that is not there. A tag made
+  # with this workflow's token starts no workflow, which is why this does not
+  # wait for the tag's own run.
   chart-release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [image]
+    needs: [image, version]
+    if: >-
+      !failure() && !cancelled() &&
+      (startsWith(github.ref, 'refs/tags/v') || needs.version.outputs.tag != '')
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
+    env:
+      TAG: ${{ needs.version.outputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+      - name: Release the merge
+        if: needs.version.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
       - uses: azure/setup-helm@v4
       - run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${TAG#v}"
           helm package chart/watchnote --version "$version" --app-version "$version"
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
           helm push "watchnote-$version.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"

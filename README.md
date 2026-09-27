@@ -74,8 +74,11 @@ is enough.
 
 ## Deploying with Helm
 
-Images are published to `ghcr.io/u9g/watchnote` by CI. On `vX.Y.Z` tags, the chart is
-also published to `oci://ghcr.io/u9g/charts/watchnote`.
+Images are published to `ghcr.io/u9g/watchnote` by CI. Every merge to `main` is released
+as the next patch version (`v0.9.1` → `v0.9.2`): a tag, a GitHub release with generated
+notes, the image tagged with that version, and the chart published to
+`oci://ghcr.io/u9g/charts/watchnote`. For a minor or major bump, push the `vX.Y.Z` tag
+yourself; the same happens for it, and later merges count on from there.
 
 You'll need:
 
