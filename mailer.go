@@ -57,6 +57,36 @@ func matching(evs []*Event, filter string) []*Event {
 	return out
 }
 
+// notBy drops events done by any of the given GitHub logins: people don't
+// need an email about their own comment or review.
+func notBy(evs []*Event, logins map[string]bool) []*Event {
+	if len(logins) == 0 {
+		return evs
+	}
+	var out []*Event
+	for _, e := range evs {
+		if !logins[strings.ToLower(e.Actor)] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// githubLogins is the lowercase logins of the GitHub accounts a user saved tokens for.
+func (a *App) githubLogins(ctx context.Context, uid int64) (map[string]bool, error) {
+	tokens, err := a.db.GitHubTokens(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	logins := map[string]bool{}
+	for _, t := range tokens {
+		if t.Login != "" {
+			logins[strings.ToLower(t.Login)] = true
+		}
+	}
+	return logins, nil
+}
+
 func userLocation(u *User) *time.Location {
 	if loc, err := time.LoadLocation(u.TZ); err == nil && u.TZ != "" {
 		return loc
@@ -100,6 +130,7 @@ func (a *App) runMailer(ctx context.Context) error {
 		return err
 	}
 	users := map[int64]*User{}
+	logins := map[int64]map[string]bool{}
 	digests := map[int64][]pendingWatch{}
 	for _, w := range watches {
 		u, ok := users[w.UserID]
@@ -108,6 +139,9 @@ func (a *App) runMailer(ctx context.Context) error {
 				return err
 			}
 			users[w.UserID] = u
+			if logins[u.ID], err = a.githubLogins(ctx, u.ID); err != nil {
+				return err
+			}
 		}
 		all, err := a.db.EventsAfter(ctx, w.ItemID, w.NotifiedEventID)
 		if err != nil || len(all) == 0 {
@@ -142,9 +176,10 @@ func (a *App) runMailer(ctx context.Context) error {
 			w.Status = "active"
 		}
 
-		evs := matching(all, w.Filter)
+		others := notBy(all, logins[u.ID])
+		evs := matching(others, w.Filter)
 		if wasDone && len(evs) == 0 {
-			for _, e := range all {
+			for _, e := range others {
 				if e.Kind == "reopened" {
 					evs = append(evs, e) // always tell people a done item came back
 				}
