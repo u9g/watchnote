@@ -376,6 +376,34 @@ func TestFilterMuteDoneAndReopen(t *testing.T) {
 	}
 }
 
+func TestOwnActivityNotEmailed(t *testing.T) {
+	h := newHarness(t)
+	h.addToken("pat_me") // GitHub login "me"
+	h.addWatch(filterEverything)
+
+	h.gh.add(comment(1, "Me", "Pushed a fix."))
+	h.tick(2 * time.Minute)
+	h.tick(2 * time.Minute)
+	if len(h.mail.Sent) != 0 {
+		t.Fatalf("emailed about my own comment: %s", h.mail.Sent[0].Subject)
+	}
+
+	h.gh.add(comment(2, "me", "One more thing."))
+	h.gh.add(comment(3, "alice", "Looks good."))
+	h.tick(2 * time.Minute)
+	h.tick(2 * time.Minute)
+	if len(h.mail.Sent) != 1 {
+		t.Fatalf("want 1 email, got %d", len(h.mail.Sent))
+	}
+	m := h.mail.Sent[0]
+	if want := "[octo/hello#7] New comment from alice"; m.Subject != want {
+		t.Errorf("subject = %q, want %q", m.Subject, want)
+	}
+	if strings.Contains(m.Text, "me commented") {
+		t.Errorf("email includes my own comment:\n%s", m.Text)
+	}
+}
+
 func TestQuietHoursAndDigest(t *testing.T) {
 	h := newHarness(t)
 	h.app.db.UpdateUserSettings(h.ctx(), h.user.ID, UserSettings{TZ: "UTC", DefaultFilter: filterEverything,
