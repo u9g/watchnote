@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -58,6 +59,17 @@ type ghStatusError struct {
 }
 
 func (e *ghStatusError) Error() string { return fmt.Sprintf("GitHub API %d: %s", e.Code, e.Body) }
+
+// transient is an error GitHub or the network may well not give again: a
+// 5xx, or a request that never got its answer.
+func transient(err error) bool {
+	var se *ghStatusError
+	if errors.As(err, &se) {
+		return se.Code >= 500
+	}
+	var ne net.Error
+	return errors.As(err, &ne) || errors.Is(err, io.ErrUnexpectedEOF)
+}
 
 // get performs a GET. It returns notModified=true for 304 responses.
 func (g *GitHub) get(ctx context.Context, path, token, etag string, out any) (newETag string, next bool, notModified bool, err error) {

@@ -6,12 +6,16 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -26,6 +30,7 @@ type fakeGitHub struct {
 	timeline []map[string]any
 	version  int
 	calls    map[string]int
+	fail     int             // how many more reads of the issue answer 502
 	release  string          // latest release tag, "" for none
 	inTag    map[string]bool // tags containing the merge commit
 
@@ -61,6 +66,12 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.calls[path]++
 	switch path {
 	case "/repos/octo/hello/issues/7", "/repos/octo/hello/pulls/7":
+		if f.fail > 0 {
+			f.fail--
+			w.WriteHeader(502)
+			w.Write([]byte(`{"message":"Server Error"}`))
+			return
+		}
 		etag := fmt.Sprintf(`"v%d"`, f.version)
 		if r.Header.Get("If-None-Match") == etag {
 			w.WriteHeader(304)
@@ -193,6 +204,23 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(h.srv.Close)
 	return h
 }
+
+// levels records the level of every line the app logs from here on.
+func (h *harness) levels() *[]slog.Level {
+	var got []slog.Level
+	h.app.log = slog.New(levelRecorder{&got})
+	return &got
+}
+
+type levelRecorder struct{ got *[]slog.Level }
+
+func (r levelRecorder) Enabled(context.Context, slog.Level) bool { return true }
+func (r levelRecorder) Handle(_ context.Context, rec slog.Record) error {
+	*r.got = append(*r.got, rec.Level)
+	return nil
+}
+func (r levelRecorder) WithAttrs([]slog.Attr) slog.Handler { return r }
+func (r levelRecorder) WithGroup(string) slog.Handler      { return r }
 
 func (h *harness) ctx() context.Context { return context.Background() }
 
@@ -656,6 +684,47 @@ func TestEmailActionLinks(t *testing.T) {
 	}
 	if got, _ := h.app.db.WatchByID(h.ctx(), w.ID); got.Status != "muted" {
 		t.Fatalf("status = %s, want muted", got.Status)
+	}
+}
+
+// A 5xx on one poll is a warning, since the next poll usually gets through;
+// one on the poll after that, or any other failure, is an error.
+func TestTransientPollFailure(t *testing.T) {
+	h := newHarness(t)
+	h.addWatch(filterEverything)
+	h.tick(time.Minute)
+	got := h.levels()
+
+	h.gh.fail = 1
+	h.tick(10 * time.Minute) // fails once
+	h.tick(10 * time.Minute) // gets through
+	h.gh.fail = 2
+	h.tick(10 * time.Minute) // fails
+	h.tick(10 * time.Minute) // fails again
+	want := []slog.Level{slog.LevelWarn, slog.LevelWarn, slog.LevelError}
+	if !slices.Equal(*got, want) {
+		t.Fatalf("logged %v, want %v", *got, want)
+	}
+}
+
+func TestTransient(t *testing.T) {
+	cases := []struct {
+		err  error
+		want bool
+	}{
+		{&ghStatusError{502, "Server Error"}, true},
+		{fmt.Errorf("timeline: %w", &ghStatusError{503, ""}), true},
+		{&ghStatusError{422, "Validation Failed"}, false},
+		{errGHNotFound, false},
+		{errGHRateLimited, false},
+		{&net.OpError{Op: "dial", Err: errors.New("connection refused")}, true},
+		{io.ErrUnexpectedEOF, true},
+		{errors.New("private repo, and no watcher has a GitHub token saved"), false},
+	}
+	for _, c := range cases {
+		if got := transient(c.err); got != c.want {
+			t.Errorf("transient(%v) = %v, want %v", c.err, got, c.want)
+		}
 	}
 }
 
