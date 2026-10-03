@@ -787,3 +787,29 @@ func TestSessionsAndLinks(t *testing.T) {
 		t.Error("seal round trip failed")
 	}
 }
+
+// A 5xx listing a token's repos is a warning, since the next scan usually
+// gets through; one on the scan after that is an error.
+func TestTransientTokenListFailure(t *testing.T) {
+	h := newHarness(t)
+	h.addToken("pat_x")
+	got := h.levels()
+	scan := func() {
+		t.Helper()
+		if err := h.app.scanCode(h.ctx()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	h.gh.down = map[string]bool{"pat_x": true}
+	scan() // fails once
+	h.gh.down = nil
+	scan() // gets through
+	h.gh.down = map[string]bool{"pat_x": true}
+	scan() // fails
+	scan() // fails again
+	want := []slog.Level{slog.LevelWarn, slog.LevelWarn, slog.LevelError}
+	if !slices.Equal(*got, want) {
+		t.Fatalf("logged %v, want %v", *got, want)
+	}
+}
