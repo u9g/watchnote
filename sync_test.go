@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"net/url"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -249,6 +251,34 @@ func TestCodeRefScanManyTokens(t *testing.T) {
 	}
 	if left, _ := h.app.db.GitHubTokens(h.ctx(), h.user.ID); len(left) != 1 || left[0].ID != tokens[1].ID {
 		t.Fatalf("left: %+v", left)
+	}
+}
+
+// A token's listing being rate limited is a warning every scan, since the
+// limit lifts by itself; a 5xx is a warning the first scan and an error when
+// the next one fails too.
+func TestTokenListFailureLevels(t *testing.T) {
+	h := newHarness(t)
+	h.addToken("pat_me")
+	got := h.levels()
+	scan := func() {
+		t.Helper()
+		if err := h.app.scanCode(h.ctx()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	h.gh.limited = map[string]bool{"pat_me": true}
+	scan()
+	scan()
+	h.gh.limited = nil
+	scan() // gets through
+	h.gh.down = map[string]bool{"pat_me": true}
+	scan()
+	scan()
+	want := []slog.Level{slog.LevelWarn, slog.LevelWarn, slog.LevelWarn, slog.LevelError}
+	if !slices.Equal(*got, want) {
+		t.Fatalf("logged %v, want %v", *got, want)
 	}
 }
 

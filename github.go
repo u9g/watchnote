@@ -71,6 +71,15 @@ func transient(err error) bool {
 	return errors.As(err, &ne) || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
+// passing is a failure to log as a warning rather than an error, because
+// trying again later will likely get through: a rate limit, which lifts at the
+// reset GitHub gives and which every read already waits out, or a transient
+// failure the first time it happens. failedBefore is whether the last try
+// failed too; a transient failure twice in a row is an error.
+func passing(err error, failedBefore bool) bool {
+	return errors.Is(err, errGHRateLimited) || transient(err) && !failedBefore
+}
+
 // get performs a GET. It returns notModified=true for 304 responses.
 func (g *GitHub) get(ctx context.Context, path, token, etag string, out any) (newETag string, next bool, notModified bool, err error) {
 	g.mu.Lock()

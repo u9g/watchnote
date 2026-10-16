@@ -31,18 +31,31 @@ type fakeGitHub struct {
 	version  int
 	calls    map[string]int
 	fail     int             // how many more reads of the issue answer 502
+	limit    int             // how many more reads of the issue are rate limited
 	release  string          // latest release tag, "" for none
 	inTag    map[string]bool // tags containing the merge commit
 
 	// Repos for /user/repos, by token where reposFor has it; me/app's default
-	// branch is at sha with files code. Listing fails for tokens in down.
+	// branch is at sha with files code. Listing fails for tokens in down, and
+	// is rate limited for tokens in limited.
 	repos        []map[string]any
 	reposFor     map[string][]map[string]any
 	down         map[string]bool
+	limited      map[string]bool
 	readsPrivate string          // the one token me/private's code is readable with
 	seesPrivate  map[string]bool // tokens that see me/private at all
 	sha          string
 	code         map[string]string
+}
+
+// rateLimited answers as GitHub does when a token's quota is spent. The reset
+// is already past, so the app token is not held back from the next tick: the
+// fake clock moves, but the wait reads the real one.
+func rateLimited(w http.ResponseWriter) {
+	w.Header().Set("X-RateLimit-Remaining", "0")
+	w.Header().Set("X-RateLimit-Reset", "1")
+	w.WriteHeader(403)
+	w.Write([]byte(`{"message":"API rate limit exceeded"}`))
 }
 
 func (f *fakeGitHub) add(ev map[string]any) {
@@ -70,6 +83,11 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			f.fail--
 			w.WriteHeader(502)
 			w.Write([]byte(`{"message":"Server Error"}`))
+			return
+		}
+		if f.limit > 0 {
+			f.limit--
+			rateLimited(w)
 			return
 		}
 		etag := fmt.Sprintf(`"v%d"`, f.version)
@@ -120,6 +138,8 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(rs)
 		} else if f.down[tok] {
 			w.WriteHeader(502)
+		} else if f.limited[tok] {
+			rateLimited(w)
 		} else {
 			json.NewEncoder(w).Encode(f.repos)
 		}
@@ -702,6 +722,24 @@ func TestTransientPollFailure(t *testing.T) {
 	h.tick(10 * time.Minute) // fails
 	h.tick(10 * time.Minute) // fails again
 	want := []slog.Level{slog.LevelWarn, slog.LevelWarn, slog.LevelError}
+	if !slices.Equal(*got, want) {
+		t.Fatalf("logged %v, want %v", *got, want)
+	}
+}
+
+// A rate limit lifts by itself and the poll waits it out, so it is a warning
+// however many polls in a row it holds up.
+func TestRateLimitedPoll(t *testing.T) {
+	h := newHarness(t)
+	h.addWatch(filterEverything)
+	h.tick(time.Minute)
+	got := h.levels()
+
+	h.gh.limit = 3
+	for range 4 {
+		h.tick(10 * time.Minute)
+	}
+	want := []slog.Level{slog.LevelWarn, slog.LevelWarn, slog.LevelWarn}
 	if !slices.Equal(*got, want) {
 		t.Fatalf("logged %v, want %v", *got, want)
 	}
