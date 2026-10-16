@@ -18,11 +18,9 @@ func (a *App) pollDue(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		// A 5xx or a dropped connection is usually gone by the next poll, ten
-		// minutes on, so the first one is a warning; failing again is an error.
 		failedBefore := it.LastError != "" // pollItem overwrites it
 		if err := a.pollItem(ctx, it); err != nil {
-			if transient(err) && !failedBefore {
+			if passing(err, failedBefore) {
 				a.log.Warn("poll failed, trying again", "item", it.Ref(), "err", err)
 			} else {
 				a.log.Error("poll failed", "item", it.Ref(), "err", err)

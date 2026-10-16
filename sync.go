@@ -205,11 +205,16 @@ func (a *App) scanUserCode(ctx context.Context, u *User) error {
 	var order []string
 	found := map[string]*listedRepo{}
 	for _, t := range tokens {
+		failedBefore := t.ListError != "" // listTokenRepos overwrites it
 		token, repos, err := a.listTokenRepos(ctx, t)
 		if err != nil {
 			// Hold on to refs from the repos it listed before, so a GitHub outage
 			// doesn't drop watches.
-			a.log.Error("listing a token's repos failed", "user", u.ID, "token", t.ID, "err", err)
+			if passing(err, failedBefore) {
+				a.log.Warn("listing a token's repos failed, trying again next scan", "user", u.ID, "token", t.ID, "err", err)
+			} else {
+				a.log.Error("listing a token's repos failed", "user", u.ID, "token", t.ID, "err", err)
+			}
 			for _, r := range t.Scanned() {
 				listed[r.Key()] = true
 			}
